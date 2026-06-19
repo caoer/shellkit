@@ -484,6 +484,7 @@ func (a *activeCall) Apply(ev mcp.LiveEvent) {
 // wfInitWaterfall sets up the incremental waterfall on call-start.
 func (a *activeCall) wfInitWaterfall(ev mcp.LiveEvent) {
 	a.parsedBodies = parseStepBodies(a.Input)
+	configLines := extractConfigLines(a.Input)
 	n := len(ev.Steps)
 	a.waterfall = make([]waterfallStep, n)
 	for i, s := range ev.Steps {
@@ -492,6 +493,9 @@ func (a *activeCall) wfInitWaterfall(ev mcp.LiveEvent) {
 			Action: s.Action,
 			Hosts:  s.Hosts,
 			Params: s.Params,
+		}
+		if i < len(configLines) {
+			a.waterfall[i].ConfigLine = configLines[i]
 		}
 		if i < len(a.parsedBodies) {
 			// Own backing array so incremental mutations don't alias parsedBodies.

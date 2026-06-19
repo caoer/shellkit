@@ -118,6 +118,9 @@ func renderWaterfall(steps []waterfallStep, w int, callStart time.Time, isActive
 			lines = append(lines, "")
 		}
 		lines = append(lines, renderStepHeader(step, w))
+		if step.ConfigLine != "" {
+			lines = append(lines, wfRail.Render("│ ")+ldDSLConf.Render(ui.Truncate(step.ConfigLine, w-4)))
+		}
 		lines = append(lines, renderStepBody(step, w, callStart, now, isActive)...)
 		lines = append(lines, renderStepFooter(step, w))
 	}

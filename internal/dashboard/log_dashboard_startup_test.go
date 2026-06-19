@@ -159,8 +159,9 @@ func TestInterruptedDurationNoEvents(t *testing.T) {
 
 	m := ldInitialModel()
 
-	// activeCall with no call-start → zero StartedAt, empty tail
-	a := &activeCall{ID: "no-start", CurrentStep: -1}
+	// activeCall with a call-start but no events afterward — simulates
+	// a process that died immediately after starting.
+	a := &activeCall{ID: "no-start", CurrentStep: -1, StartedAt: time.Now().Add(-time.Minute)}
 	m.active["no-start"] = a
 	m.activeIDs = append(m.activeIDs, "no-start")
 

@@ -1787,6 +1787,13 @@ func (m *ldModel) classifyInterrupted() {
 	}
 	for _, id := range dead {
 		a := m.active[id]
+		// Skip calls that never received a call-start event — these are
+		// garbage from partial/corrupt event files with no useful data.
+		if a.StartedAt.IsZero() {
+			delete(m.active, id)
+			delete(m.cellCache, id)
+			continue
+		}
 		entry := a.asCallEntry()
 		entry.Error = "interrupted"
 		// asCallEntry uses time.Since(StartedAt) which is wrong for old/dead

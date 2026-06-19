@@ -41,6 +41,7 @@ type waterfallStep struct {
 	Action     string
 	Hosts      []string
 	Params     map[string]string // config params: timeout, trace, entrypoint, etc.
+	ConfigLine string            // raw JSON config line from DSL input (e.g. {"ssh": "host", "timeout": 30})
 	Started    bool
 	Ended      bool
 	ExitCode   int
@@ -89,6 +90,24 @@ type wfOut struct {
 	Text   string
 	Host   string
 	Ts     time.Time
+}
+
+// extractConfigLines returns the raw JSON config line for each step in the
+// DSL input, preserving step order. Steps with no JSON config get "".
+func extractConfigLines(input string) []string {
+	var configs []string
+	for _, line := range strings.Split(input, "\n") {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "### ") {
+			configs = append(configs, "") // placeholder; overwritten if JSON follows
+			continue
+		}
+		if len(configs) > 0 && configs[len(configs)-1] == "" &&
+			strings.HasPrefix(t, "{") && strings.HasSuffix(t, "}") {
+			configs[len(configs)-1] = t
+		}
+	}
+	return configs
 }
 
 // ── Body parsing ───────────────────────────────────────────────────────
