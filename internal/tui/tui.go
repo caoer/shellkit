@@ -732,9 +732,9 @@ func CLIList(servers []inventory.Server, jsonOutput bool) {
 	}
 }
 
-func CLICheck(servers []inventory.Server, jsonOutput bool, extraKeys bool, disableDefaultKey bool) {
+func CLICheck(servers []inventory.Server, jsonOutput bool, extraKeys bool, disableDefaultKey bool, disablePassword bool) {
 	fmt.Fprintf(os.Stderr, "Probing %d servers...\n", len(servers))
-	opts := sshconn.ProbeOptions{DisableDefaultKey: disableDefaultKey}
+	opts := sshconn.ProbeOptions{DisableDefaultKey: disableDefaultKey, DisablePassword: disablePassword}
 	results := sshconn.ProbeAll(servers, 20, 5*time.Second, opts, func(r sshconn.ProbeResult, done, total int) {
 		fmt.Fprintf(os.Stderr, "\r  %d/%d", done, total)
 	})

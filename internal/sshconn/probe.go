@@ -137,6 +137,9 @@ type ProbeOptions struct {
 	// explicit identity and no password report no-key (StatusAuthFail)
 	// without attempting SSH auth.
 	DisableDefaultKey bool
+	// DisablePassword skips password auth for password_ref hosts, reporting
+	// auth-fail without attempting to resolve or use the password.
+	DisablePassword bool
 }
 
 func ProbeServer(s *inventory.Server, timeout time.Duration, opts ...ProbeOptions) ProbeResult {
@@ -170,6 +173,12 @@ func ProbeServer(s *inventory.Server, timeout time.Duration, opts ...ProbeOption
 	// real connection will do. Offering keys here would let a stray key report
 	// auth-ok while password-only exec fails.
 	if s.HasPassword() {
+		if opt.DisablePassword {
+			result.Status = StatusAuthFail
+			result.KeyUsed = "(password)"
+			result.Error = "password auth disabled"
+			return result
+		}
 		return probePassword(s, addr, result, timeout)
 	}
 
