@@ -1,5 +1,5 @@
  shellkit logs 1 entries  [unified]
- call:pipeline  step:complex-bash  → host-1  10:01:41  3.7s
+ call:pipeline  step:complex-bash  → host-1  10:01:41  3.7s  {"ssh": "host-1", "timeout": 10}
 ▎  OK  05-16 10:01 3.7s                          │ ┌─ complex-bash [ssh] → host-1 ✓ 3.7s                                                                       
 ▎ complex-bash [ssh] → host-1                    │ │ ✓ [[ -f /etc/os-release ]] && source /etc/os-release && echo "OS: $PRETTY_NAME"                           
 ▎ [[ -f /etc/os-release ]] && source /etc/os-re~ │ │       ✓ [[ -f /etc/os-release ]]                                                                  (+0.00s)

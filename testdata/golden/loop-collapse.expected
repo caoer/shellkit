@@ -1,5 +1,5 @@
  shellkit logs 1 entries  [unified]
- call:loop-col  step:stream-test  → host-1  10:06:57  10.1s
+ call:loop-col  step:stream-test  → host-1  10:06:57  10.1s  {"ssh": "host-1", "timeout": 15}
 ▎  OK  05-16 10:06 10.1s                         │ │ ✓ echo "starting stream..."                                                                               
 ▎ stream-test [ssh] → host-1                     │ │ ▐ starting stream...                                                                                      
 ▎ echo "starting stream..."                      │ │ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ 4.39s
