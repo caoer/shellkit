@@ -371,7 +371,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			probeCh = ch
 			servers := m.servers
 			go func() {
-				sshconn.ProbeAll(servers, 20, 5*time.Second, func(r sshconn.ProbeResult, done, total int) {
+				sshconn.ProbeAll(servers, 20, 5*time.Second, sshconn.ProbeOptions{}, func(r sshconn.ProbeResult, done, total int) {
 					ch <- probeResultMsg{result: r, done: done, total: total}
 				})
 				close(ch)
@@ -678,7 +678,7 @@ func RunTUI(servers []inventory.Server) error {
 	probeCh = ch
 
 	go func() {
-		sshconn.ProbeAll(servers, 20, 5*time.Second, func(r sshconn.ProbeResult, done, total int) {
+		sshconn.ProbeAll(servers, 20, 5*time.Second, sshconn.ProbeOptions{}, func(r sshconn.ProbeResult, done, total int) {
 			ch <- probeResultMsg{result: r, done: done, total: total}
 		})
 		close(ch)
@@ -732,12 +732,46 @@ func CLIList(servers []inventory.Server, jsonOutput bool) {
 	}
 }
 
-func CLICheck(servers []inventory.Server, jsonOutput bool) {
+func CLICheck(servers []inventory.Server, jsonOutput bool, extraKeys bool, disableDefaultKey bool) {
 	fmt.Fprintf(os.Stderr, "Probing %d servers...\n", len(servers))
-	results := sshconn.ProbeAll(servers, 20, 5*time.Second, func(r sshconn.ProbeResult, done, total int) {
+	opts := sshconn.ProbeOptions{DisableDefaultKey: disableDefaultKey}
+	results := sshconn.ProbeAll(servers, 20, 5*time.Second, opts, func(r sshconn.ProbeResult, done, total int) {
 		fmt.Fprintf(os.Stderr, "\r  %d/%d", done, total)
 	})
 	fmt.Fprintln(os.Stderr)
+
+	if extraKeys {
+		// For auth-ok hosts, probe which extra agent keys also work
+		var authOKResults []int
+		for i, r := range results {
+			if r.Status == sshconn.StatusAuthOK {
+				authOKResults = append(authOKResults, i)
+			}
+		}
+		if len(authOKResults) > 0 {
+			fmt.Fprintf(os.Stderr, "Probing extra keys on %d hosts...\n", len(authOKResults))
+			var wg sync.WaitGroup
+			var mu sync.Mutex
+			sem := make(chan struct{}, 10)
+			done := 0
+			for _, idx := range authOKResults {
+				wg.Add(1)
+				go func(i int) {
+					defer wg.Done()
+					sem <- struct{}{}
+					defer func() { <-sem }()
+					extra := sshconn.ProbeExtraKeys(results[i].Server, 5*time.Second)
+					mu.Lock()
+					results[i].ExtraKeys = extra
+					done++
+					fmt.Fprintf(os.Stderr, "\r  %d/%d", done, len(authOKResults))
+					mu.Unlock()
+				}(idx)
+			}
+			wg.Wait()
+			fmt.Fprintln(os.Stderr)
+		}
+	}
 
 	if jsonOutput {
 		printCheckJSON(results)
@@ -759,9 +793,13 @@ func CLICheck(servers []inventory.Server, jsonOutput bool) {
 		if r.KeyUsed != "" {
 			key = shortPath(r.KeyUsed)
 		}
-		fmt.Printf("%-14s %-20s %-17s %-8s %8s  %s\n",
+		extra := ""
+		if len(r.ExtraKeys) > 0 {
+			extra = "  +extra: " + strings.Join(r.ExtraKeys, ", ")
+		}
+		fmt.Printf("%-14s %-20s %-17s %-8s %8s  %s%s\n",
 			r.Server.Provider, r.Server.Name, r.Server.IP,
-			r.Status.String(), sshconn.FormatLatency(r.Latency), key)
+			r.Status.String(), sshconn.FormatLatency(r.Latency), key, extra)
 	}
 
 	var online, authOK, down int
@@ -798,12 +836,13 @@ type listEntryJSON struct {
 }
 
 type checkEntryJSON struct {
-	Provider  string `json:"provider"`
-	Name      string `json:"name"`
-	IP        string `json:"wan_ip"`
-	Status    string `json:"status"`
-	LatencyMs int64  `json:"latency_ms"`
-	Key       string `json:"key"`
+	Provider  string   `json:"provider"`
+	Name      string   `json:"name"`
+	IP        string   `json:"wan_ip"`
+	Status    string   `json:"status"`
+	LatencyMs int64    `json:"latency_ms"`
+	Key       string   `json:"key"`
+	ExtraKeys []string `json:"extra_keys,omitempty"`
 }
 
 func writeJSON(v any) {
@@ -853,6 +892,7 @@ func printCheckJSON(results []sshconn.ProbeResult) {
 			Status:    r.Status.String(),
 			LatencyMs: r.Latency.Milliseconds(),
 			Key:       r.KeyUsed,
+			ExtraKeys: r.ExtraKeys,
 		})
 	}
 	writeJSON(out)

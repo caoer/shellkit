@@ -62,11 +62,12 @@ func (s ProbeStatus) Symbol() string {
 }
 
 type ProbeResult struct {
-	Server  *inventory.Server
-	Status  ProbeStatus
-	Latency time.Duration
-	KeyUsed string
-	Error   string
+	Server    *inventory.Server
+	Status    ProbeStatus
+	Latency   time.Duration
+	KeyUsed   string
+	ExtraKeys []string // keys that also authenticate (--extra-keys mode)
+	Error     string
 }
 
 // loadPublicKey tries <path>.pub for each path and returns the first valid
@@ -130,7 +131,20 @@ type namedSigner struct {
 	label string
 }
 
-func ProbeServer(s *inventory.Server, timeout time.Duration) ProbeResult {
+// ProbeOptions controls optional probe behaviour.
+type ProbeOptions struct {
+	// DisableDefaultKey skips the default identity fallback. Hosts with no
+	// explicit identity and no password report no-key (StatusAuthFail)
+	// without attempting SSH auth.
+	DisableDefaultKey bool
+}
+
+func ProbeServer(s *inventory.Server, timeout time.Duration, opts ...ProbeOptions) ProbeResult {
+	var opt ProbeOptions
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+
 	result := ProbeResult{Server: s, Status: StatusPending}
 
 	if s.ResolvedIP() == "" || s.State == "stopped" {
@@ -157,6 +171,14 @@ func ProbeServer(s *inventory.Server, timeout time.Duration) ProbeResult {
 	// auth-ok while password-only exec fails.
 	if s.HasPassword() {
 		return probePassword(s, addr, result, timeout)
+	}
+
+	// When --disable-default-key is set, hosts with no explicit identity
+	// skip the probe entirely — no key to try means no-key, not "try default".
+	if opt.DisableDefaultKey && s.Identity == "" {
+		result.Status = StatusAuthFail
+		result.Error = "no explicit identity and default key disabled"
+		return result
 	}
 
 	keyPaths := s.KeyPaths()
@@ -269,9 +291,57 @@ func probePassword(s *inventory.Server, addr string, result ProbeResult, timeout
 	return result
 }
 
+// ProbeExtraKeys tries every agent key individually against a host that
+// already passed auth, returning labels of keys that also authenticate.
+// The configured key (result.KeyUsed) is excluded from the list.
+func ProbeExtraKeys(s *inventory.Server, timeout time.Duration) []string {
+	addr := s.ConnectAddr()
+	agents := agentSigners()
+	if len(agents) == 0 {
+		return nil
+	}
+
+	// Identify the configured key's public fingerprint so we can skip it
+	var configuredPub []byte
+	keyPaths := s.KeyPaths()
+	if pub := loadPublicKey(keyPaths); pub != nil {
+		configuredPub = pub.Marshal()
+	} else {
+		// Try loading the private key to get its public key
+		signers := loadSigners(keyPaths)
+		if len(signers) > 0 {
+			configuredPub = signers[0].PublicKey().Marshal()
+		}
+	}
+
+	var extra []string
+	for _, signer := range agents {
+		// Skip the configured key
+		if configuredPub != nil && string(signer.PublicKey().Marshal()) == string(configuredPub) {
+			continue
+		}
+
+		config := &ssh.ClientConfig{
+			User:            s.DisplayUser(),
+			Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
+			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+			Timeout:         timeout,
+		}
+		client, err := ssh.Dial("tcp", addr, config)
+		if err != nil {
+			continue
+		}
+		client.Close()
+
+		fp := ssh.FingerprintSHA256(signer.PublicKey())
+		extra = append(extra, fp)
+	}
+	return extra
+}
+
 type ProbeCallback func(result ProbeResult, done int, total int)
 
-func ProbeAll(servers []inventory.Server, concurrency int, timeout time.Duration, cb ProbeCallback) []ProbeResult {
+func ProbeAll(servers []inventory.Server, concurrency int, timeout time.Duration, opts ProbeOptions, cb ProbeCallback) []ProbeResult {
 	results := make([]ProbeResult, len(servers))
 	var mu sync.Mutex
 	done := 0
@@ -286,7 +356,7 @@ func ProbeAll(servers []inventory.Server, concurrency int, timeout time.Duration
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			r := ProbeServer(&servers[idx], timeout)
+			r := ProbeServer(&servers[idx], timeout, opts)
 			mu.Lock()
 			results[idx] = r
 			done++

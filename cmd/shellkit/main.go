@@ -96,6 +96,8 @@ Flags:
   --json             JSON output (list/check only)
   --managed <value>  Filter to hosts with managed=<value> (e.g. osfiles)
   --addr <pref>      Address preference: auto|wan|lan|wireguard|tailscale|easytier (default: auto)
+  --extra-keys       For auth-ok hosts, probe which other agent keys also authenticate (check only)
+  --disable-default-key  Skip default identity fallback; no-key hosts report no-key instead of probing
   -h                 Help
 
 Environment:
@@ -113,7 +115,7 @@ Environment:
 // position relative to the subcommand. The Go stdlib `flag` stops parsing at
 // the first positional, so without this, `shellkit list --json` would silently
 // ignore the flag.
-func extractGlobalFlags(args []string) (inventoryPath string, jsonOutput bool, managedFilter string, addrPrefStr string, rest []string) {
+func extractGlobalFlags(args []string) (inventoryPath string, jsonOutput bool, managedFilter string, addrPrefStr string, extraKeys bool, disableDefaultKey bool, rest []string) {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
@@ -154,6 +156,10 @@ func extractGlobalFlags(args []string) (inventoryPath string, jsonOutput bool, m
 			i++
 		case strings.HasPrefix(a, "--addr="):
 			addrPrefStr = strings.SplitN(a, "=", 2)[1]
+		case a == "--extra-keys":
+			extraKeys = true
+		case a == "--disable-default-key":
+			disableDefaultKey = true
 		default:
 			rest = append(rest, a)
 		}
@@ -164,7 +170,7 @@ func extractGlobalFlags(args []string) (inventoryPath string, jsonOutput bool, m
 func main() {
 	flag.Usage = usage
 
-	inventoryPath, jsonOutput, managedFilter, addrPrefStr, rest := extractGlobalFlags(os.Args[1:])
+	inventoryPath, jsonOutput, managedFilter, addrPrefStr, extraKeys, disableDefaultKey, rest := extractGlobalFlags(os.Args[1:])
 
 	// version needs no inventory — handle it before the inventory check.
 	if len(rest) > 0 && rest[0] == "version" {
@@ -254,7 +260,7 @@ func main() {
 			}
 			servers = filtered
 		}
-		tui.CLICheck(servers, jsonOutput)
+		tui.CLICheck(servers, jsonOutput, extraKeys, disableDefaultKey)
 	case "generate-configs":
 		nukeControlSockets()
 		if dest := os.Getenv("SHELLKIT_GENERATED_CONFIG_PATH"); dest != "" {
