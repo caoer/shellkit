@@ -1,0 +1,35 @@
+# lefthook — fast pre-commit quality gate.
+#
+# Goal: finish in seconds. Only cheap, staged-file-scoped checks run here;
+# the heavy gates (golangci-lint, nix flake check, the test suite) stay in
+# `just lint` / `just test` and CI. Commits touching only docs skip Go checks.
+#
+# Installed automatically on dev-shell entry (flake shellHook); or run
+# `just hooks` / `lefthook install` manually.
+
+pre-commit:
+  parallel: true
+  commands:
+    # Reject unformatted Go. gofmt is effectively instant.
+    gofmt:
+      glob: "*.go"
+      run: |
+        unformatted=$(gofmt -l {staged_files})
+        if [ -n "$unformatted" ]; then
+          echo "gofmt: needs formatting (run \`gofmt -w\` or \`just fmt\`):"
+          echo "$unformatted"
+          exit 1
+        fi
+
+    # go vet catches real bugs; fast with a warm build cache.
+    govet:
+      glob: "*.go"
+      run: go vet ./...
+
+    # Shell hygiene — only triggers when shell files are actually staged.
+    shfmt:
+      glob: "*.{sh,bash}"
+      run: shfmt -d {staged_files}
+    shellcheck:
+      glob: "*.{sh,bash}"
+      run: shellcheck {staged_files}

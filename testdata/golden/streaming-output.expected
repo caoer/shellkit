@@ -1,0 +1,40 @@
+ shellkit logs 1 entries  [unified]
+ call:streamin  step:iperf3-client  09:57:26  30.1s
+▎ FAIL 05-16 09:57 30.1s                         │ ┌─ iperf3-client [local] ✗ exit:1 30.1s                                                                     
+▎ iperf3-client [local]                          │ │ ✓ sleep 2 && iperf3 -c 192.168.61.1 -t 10                                                                 
+▎ sleep 2 && iperf3 -c 192.168.61.1 -t 10        │ │       ✓ sleep 2                                                                                   (+2.01s)
+──────────────────────────────────────────────── │ │     &&✓ iperf3 -c 192.168.61.1 -t 10                                                             (+28.10s)
+                                                 │ │ ▐ iperf3: error - unable to send control message - port may not be available, the other side may have     
+                                                 │ │ ▐ stopped running, etc.: Broken pipe                                                                      
+                                                 │ │ ▐ Connecting to host 192.168.61.1, port 5201                                                              
+                                                 │ │ ▐ [  5] local 192.168.61.216 port 58014 connected to 192.168.61.1 port 5201                               
+                                                 │ │ ▐ [ ID] Interval           Transfer     Bitrate                                                           
+                                                 │ │ ▐ [  5]   0.00-1.01   sec   150 MBytes  1.26 Gbits/sec                                                    
+                                                 │ │ ▐ [  5]   1.01-2.01   sec   148 MBytes  1.24 Gbits/sec                                                    
+                                                 │ │ ▐ [  5]   2.01-3.00   sec   146 MBytes  1.23 Gbits/sec                                                    
+                                                 │ │ ▐ [  5]   3.00-4.01   sec   143 MBytes  1.19 Gbits/sec                                                    
+                                                 │ │ ▐ [  5]   4.01-5.01   sec   149 MBytes  1.25 Gbits/sec                                                    
+                                                 │ │ ▐ [  5]   5.01-6.00   sec   143 MBytes  1.20 Gbits/sec                                                    
+                                                 │ │ ▐ [  5]   6.00-7.00   sec   149 MBytes  1.26 Gbits/sec                                                    
+                                                 │ │ ▐ [  5]   7.00-8.01   sec   158 MBytes  1.32 Gbits/sec                                                    
+                                                 │ │ ▐ [  5]   8.01-9.00   sec  7.12 MBytes  59.8 Mbits/sec                                                    
+                                                 │ │ ▐ [  5]   9.00-10.01  sec  0.00 Bytes  0.00 bits/sec                                                      
+                                                 │ │ ▐ - - - - - - - - - - - - - - - - - - - - - - - - -                                                       
+                                                 │ │ ▐ [ ID] Interval           Transfer     Bitrate                                                           
+                                                 │ │ ▐ [  5]   0.00-10.01  sec  1.17 GBytes  1.00 Gbits/sec                  sender                            
+                                                 │ │ ▐ [  5]   0.00-10.01  sec  0.00 Bytes  0.00 bits/sec                  receiver                            
+                                                 │ │ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ 30.12s
+                                                 │ └─ ✗ exit:1  30.1s                                                                                          
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+ [j/k]nav  [C-d/u]scroll  [tab]layout  [/]search  [esc]list  [q]uit  1/1 

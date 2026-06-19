@@ -1,0 +1,24 @@
+{"input":"### iperf3-client\n\nsleep 2 \u0026\u0026 iperf3 -c 192.168.61.1 -t 10\n","kind":"call-start","session_id":"","steps":[{"name":"iperf3-client","action":"local","body":"sleep 2 \u0026\u0026 iperf3 -c 192.168.61.1 -t 10"}],"ts":"2026-05-16T09:57:26.150733Z"}
+{"action":"local","hosts":null,"kind":"step-start","name":"iperf3-client","step":0,"ts":"2026-05-16T09:57:26.150871Z"}
+{"cmd":"sleep 2","elapsed_sec":0,"host":"","kind":"executing","line_no":2,"name":"iperf3-client","step":0,"ts":"2026-05-16T09:57:26.156833Z"}
+{"cmd":"iperf3 -c 192.168.61.1 -t 10","elapsed_sec":2,"host":"","kind":"executing","line_no":2,"name":"iperf3-client","step":0,"ts":"2026-05-16T09:57:28.165682Z"}
+{"host":"","kind":"stderr","line":"iperf3: error - unable to send control message - port may not be available, the other side may have stopped running, etc.: Broken pipe","name":"iperf3-client","step":0,"ts":"2026-05-16T09:57:56.259518Z"}
+{"host":"","kind":"stdout","line":"Connecting to host 192.168.61.1, port 5201","name":"iperf3-client","step":0,"ts":"2026-05-16T09:57:56.259543Z"}
+{"host":"","kind":"stdout","line":"[  5] local 192.168.61.216 port 58014 connected to 192.168.61.1 port 5201","name":"iperf3-client","step":0,"ts":"2026-05-16T09:57:56.259594Z"}
+{"host":"","kind":"stdout","line":"[ ID] Interval           Transfer     Bitrate","name":"iperf3-client","step":0,"ts":"2026-05-16T09:57:56.259601Z"}
+{"host":"","kind":"stdout","line":"[  5]   0.00-1.01   sec   150 MBytes  1.26 Gbits/sec                  ","name":"iperf3-client","step":0,"ts":"2026-05-16T09:57:56.259609Z"}
+{"host":"","kind":"stdout","line":"[  5]   1.01-2.01   sec   148 MBytes  1.24 Gbits/sec                  ","name":"iperf3-client","step":0,"ts":"2026-05-16T09:57:56.259614Z"}
+{"host":"","kind":"stdout","line":"[  5]   2.01-3.00   sec   146 MBytes  1.23 Gbits/sec                  ","name":"iperf3-client","step":0,"ts":"2026-05-16T09:57:56.259619Z"}
+{"host":"","kind":"stdout","line":"[  5]   3.00-4.01   sec   143 MBytes  1.19 Gbits/sec                  ","name":"iperf3-client","step":0,"ts":"2026-05-16T09:57:56.259623Z"}
+{"host":"","kind":"stdout","line":"[  5]   4.01-5.01   sec   149 MBytes  1.25 Gbits/sec                  ","name":"iperf3-client","step":0,"ts":"2026-05-16T09:57:56.259627Z"}
+{"host":"","kind":"stdout","line":"[  5]   5.01-6.00   sec   143 MBytes  1.20 Gbits/sec                  ","name":"iperf3-client","step":0,"ts":"2026-05-16T09:57:56.259631Z"}
+{"host":"","kind":"stdout","line":"[  5]   6.00-7.00   sec   149 MBytes  1.26 Gbits/sec                  ","name":"iperf3-client","step":0,"ts":"2026-05-16T09:57:56.259636Z"}
+{"host":"","kind":"stdout","line":"[  5]   7.00-8.01   sec   158 MBytes  1.32 Gbits/sec                  ","name":"iperf3-client","step":0,"ts":"2026-05-16T09:57:56.259641Z"}
+{"host":"","kind":"stdout","line":"[  5]   8.01-9.00   sec  7.12 MBytes  59.8 Mbits/sec                  ","name":"iperf3-client","step":0,"ts":"2026-05-16T09:57:56.259648Z"}
+{"host":"","kind":"stdout","line":"[  5]   9.00-10.01  sec  0.00 Bytes  0.00 bits/sec                  ","name":"iperf3-client","step":0,"ts":"2026-05-16T09:57:56.259653Z"}
+{"host":"","kind":"stdout","line":"- - - - - - - - - - - - - - - - - - - - - - - - -","name":"iperf3-client","step":0,"ts":"2026-05-16T09:57:56.259677Z"}
+{"host":"","kind":"stdout","line":"[ ID] Interval           Transfer     Bitrate","name":"iperf3-client","step":0,"ts":"2026-05-16T09:57:56.259681Z"}
+{"host":"","kind":"stdout","line":"[  5]   0.00-10.01  sec  1.17 GBytes  1.00 Gbits/sec                  sender","name":"iperf3-client","step":0,"ts":"2026-05-16T09:57:56.259689Z"}
+{"host":"","kind":"stdout","line":"[  5]   0.00-10.01  sec  0.00 Bytes  0.00 bits/sec                  receiver","name":"iperf3-client","step":0,"ts":"2026-05-16T09:57:56.259694Z"}
+{"duration_ms":30109,"exit_code":1,"kind":"step-end","name":"iperf3-client","step":0,"ts":"2026-05-16T09:57:56.260889Z"}
+{"duration_ms":30110,"kind":"call-end","status":"ok","ts":"2026-05-16T09:57:56.260904Z"}

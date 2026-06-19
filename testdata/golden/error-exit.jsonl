@@ -1,0 +1,10 @@
+{"input":"### check-tmux-workers\n\ntmux capture-pane -p -t ucc:worker.0 2\u003e/dev/null | tail -20\necho \"===\"\ntmux list-windows -t ucc -F \"#{window_index}: #{window_name} #{window_active}\"\n","kind":"call-start","session_id":"","steps":[{"name":"check-tmux-workers","action":"local","body":"tmux capture-pane -p -t ucc:worker.0 2\u003e/dev/null | tail -20"}],"ts":"2026-05-16T10:19:55.269733Z"}
+{"action":"local","hosts":null,"kind":"step-start","name":"check-tmux-workers","step":0,"ts":"2026-05-16T10:19:55.269933Z"}
+{"cmd":"tmux capture-pane -p -t ucc:worker.0 2\u003e /dev/null","elapsed_sec":0,"host":"","kind":"executing","line_no":2,"name":"check-tmux-workers","step":0,"ts":"2026-05-16T10:19:55.275257Z"}
+{"cmd":"tail -20","elapsed_sec":0,"host":"","kind":"executing","line_no":2,"name":"check-tmux-workers","step":0,"ts":"2026-05-16T10:19:55.276091Z"}
+{"cmd":"echo \"===\"","elapsed_sec":0,"host":"","kind":"executing","line_no":3,"name":"check-tmux-workers","step":0,"ts":"2026-05-16T10:19:55.282223Z"}
+{"host":"","kind":"stdout","line":"===","name":"check-tmux-workers","step":0,"ts":"2026-05-16T10:19:55.282659Z"}
+{"cmd":"tmux list-windows -t ucc -F \"#{window_index}: #{window_name} #{window_active}\"","elapsed_sec":0,"host":"","kind":"executing","line_no":4,"name":"check-tmux-workers","step":0,"ts":"2026-05-16T10:19:55.282712Z"}
+{"host":"","kind":"stderr","line":"can't find session: ucc","name":"check-tmux-workers","step":0,"ts":"2026-05-16T10:19:55.288011Z"}
+{"duration_ms":19,"exit_code":1,"kind":"step-end","name":"check-tmux-workers","step":0,"ts":"2026-05-16T10:19:55.289066Z"}
+{"duration_ms":19,"kind":"call-end","status":"ok","ts":"2026-05-16T10:19:55.289084Z"}

@@ -1,0 +1,28 @@
+{"input":"### retry-ssh\n{\"ssh\": \"host-2\", \"timeout\": 30}\n\nsleep 5 \u0026\u0026 ssh -v -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=15 root@118.145.101.7 'echo SSH_OK' 2\u003e\u00261 | tail -20\n","kind":"call-start","session_id":"","steps":[{"name":"retry-ssh","action":"ssh","hosts":["host-2"],"body":"sleep 5 \u0026\u0026 ssh -v -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=15 root@118.145.101.7 'echo SSH_OK' 2\u003e\u00261 | tail -20"}],"ts":"2026-05-16T13:00:42.763722Z"}
+{"action":"ssh","hosts":["host-2"],"kind":"step-start","name":"retry-ssh","step":0,"ts":"2026-05-16T13:00:42.763842Z"}
+{"cmd":"sleep 5","elapsed_sec":0,"host":"host-2","kind":"executing","line_no":2,"name":"retry-ssh","step":0,"ts":"2026-05-16T13:00:46.797877Z"}
+{"cmd":"ssh -v -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=15 root@118.145.101.7 'echo SSH_OK' 2\u003e\u00261","elapsed_sec":5,"host":"host-2","kind":"executing","line_no":2,"name":"retry-ssh","step":0,"ts":"2026-05-16T13:00:51.801204Z"}
+{"cmd":"tail -20","elapsed_sec":5,"host":"host-2","kind":"executing","line_no":2,"name":"retry-ssh","step":0,"ts":"2026-05-16T13:00:51.801261Z"}
+{"host":"host-2","kind":"stdout","line":"Authenticated to 23.252.105.155 ([23.252.105.155]:22133) using \"publickey\".\r","name":"retry-ssh","step":0,"ts":"2026-05-16T13:00:52.8874Z"}
+{"host":"host-2","kind":"stdout","line":"debug1: channel_connect_stdio_fwd: 118.145.101.7:22\r","name":"retry-ssh","step":0,"ts":"2026-05-16T13:00:52.887438Z"}
+{"host":"host-2","kind":"stdout","line":"debug1: channel 0: new stdio-forward [stdio-forward] (inactive timeout: 0)\r","name":"retry-ssh","step":0,"ts":"2026-05-16T13:00:52.887447Z"}
+{"host":"host-2","kind":"stdout","line":"debug1: getpeername failed: Bad file descriptor\r","name":"retry-ssh","step":0,"ts":"2026-05-16T13:00:52.887454Z"}
+{"host":"host-2","kind":"stdout","line":"debug1: Requesting no-more-sessions@openssh.com\r","name":"retry-ssh","step":0,"ts":"2026-05-16T13:00:52.88746Z"}
+{"host":"host-2","kind":"stdout","line":"debug1: Entering interactive session.\r","name":"retry-ssh","step":0,"ts":"2026-05-16T13:00:52.887466Z"}
+{"host":"host-2","kind":"stdout","line":"debug1: pledge: filesystem\r","name":"retry-ssh","step":0,"ts":"2026-05-16T13:00:52.887472Z"}
+{"host":"host-2","kind":"stdout","line":"debug1: client_input_global_request: rtype hostkeys-00@openssh.com want_reply 0\r","name":"retry-ssh","step":0,"ts":"2026-05-16T13:00:52.887478Z"}
+{"host":"host-2","kind":"stdout","line":"debug1: client_input_hostkeys: searching /root/.ssh/known_hosts for [23.252.105.155]:22133 / (none)\r","name":"retry-ssh","step":0,"ts":"2026-05-16T13:00:52.887482Z"}
+{"host":"host-2","kind":"stdout","line":"debug1: client_input_hostkeys: searching /root/.ssh/known_hosts2 for [23.252.105.155]:22133 / (none)\r","name":"retry-ssh","step":0,"ts":"2026-05-16T13:00:52.887486Z"}
+{"host":"host-2","kind":"stdout","line":"debug1: client_input_hostkeys: hostkeys file /root/.ssh/known_hosts2 does not exist\r","name":"retry-ssh","step":0,"ts":"2026-05-16T13:00:52.887493Z"}
+{"host":"host-2","kind":"stdout","line":"debug1: client_input_hostkeys: no new or deprecated keys from server\r","name":"retry-ssh","step":0,"ts":"2026-05-16T13:00:52.887499Z"}
+{"host":"host-2","kind":"stdout","line":"debug1: pledge: fork\r","name":"retry-ssh","step":0,"ts":"2026-05-16T13:00:52.887504Z"}
+{"host":"host-2","kind":"stdout","line":"debug1: Remote: /root/.ssh/authorized_keys:6: key options: agent-forwarding port-forwarding pty user-rc x11-forwarding\r","name":"retry-ssh","step":0,"ts":"2026-05-16T13:00:52.887508Z"}
+{"host":"host-2","kind":"stdout","line":"debug1: Remote: /root/.ssh/authorized_keys:6: key options: agent-forwarding port-forwarding pty user-rc x11-forwarding\r","name":"retry-ssh","step":0,"ts":"2026-05-16T13:00:52.887512Z"}
+{"host":"host-2","kind":"stdout","line":"debug1: channel 0: FORCE input drain\r","name":"retry-ssh","step":0,"ts":"2026-05-16T13:00:52.887516Z"}
+{"host":"host-2","kind":"stdout","line":"kex_exchange_identification: Connection closed by remote host\r","name":"retry-ssh","step":0,"ts":"2026-05-16T13:00:52.88753Z"}
+{"host":"host-2","kind":"stdout","line":"Connection closed by UNKNOWN port 65535\r","name":"retry-ssh","step":0,"ts":"2026-05-16T13:00:52.887533Z"}
+{"host":"host-2","kind":"stdout","line":"debug1: channel 0: free: direct-tcpip: listening port 0 for 118.145.101.7 port 22, connect from 127.0.0.1 port 65535 to UNKNOWN port 65536, nchannels 1\r","name":"retry-ssh","step":0,"ts":"2026-05-16T13:00:52.887536Z"}
+{"host":"host-2","kind":"stdout","line":"Killed by signal 1.\r","name":"retry-ssh","step":0,"ts":"2026-05-16T13:00:52.887539Z"}
+{"host":"host-2","kind":"stdout","line":"","name":"retry-ssh","step":0,"ts":"2026-05-16T13:00:53.235217Z"}
+{"duration_ms":10471,"exit_code":0,"kind":"step-end","name":"retry-ssh","step":0,"ts":"2026-05-16T13:00:53.235862Z"}
+{"duration_ms":10472,"kind":"call-end","status":"ok","ts":"2026-05-16T13:00:53.235884Z"}

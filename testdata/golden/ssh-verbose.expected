@@ -1,0 +1,40 @@
+ shellkit logs 1 entries  [unified]
+ call:ssh-verb  step:retry-ssh  → host-2  13:00:42  10.5s
+▎  OK  05-16 13:00 10.5s                         │ ┌─ retry-ssh [ssh] → host-2 ✓ 10.5s                                                                         
+▎ retry-ssh [ssh] → host-2                       │ │ ✓ sleep 5 && ssh -v -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=15      
+▎ sleep 5 && ssh -v -o StrictHostKeyChecking=no~ │ │   root@118.145.101.7 'echo SSH_OK' 2>&1 | tail -20                                                        
+──────────────────────────────────────────────── │ │       ✓ sleep 5                                                                                   (+5.00s)
+                                                 │ │     &&✓ ssh -v -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=15~  (+0.00s)
+                                                 │ │     | ✓ tail -20                                                                                  (+5.47s)
+                                                 │ │ ▐ Authenticated to 23.252.105.155 ([23.252.105.155]:22133) using "publickey".                             
+                                                 │ │ ▐ debug1: channel_connect_stdio_fwd: 118.145.101.7:22                                                     
+                                                 │ │ ▐ debug1: channel 0: new stdio-forward [stdio-forward] (inactive timeout: 0)                              
+                                                 │ │ ▐ debug1: getpeername failed: Bad file descriptor                                                         
+                                                 │ │ ▐ debug1: Requesting no-more-sessions@openssh.com                                                         
+                                                 │ │ ▐ debug1: Entering interactive session.                                                                   
+                                                 │ │ ▐ debug1: pledge: filesystem                                                                              
+                                                 │ │ ▐ debug1: client_input_global_request: rtype hostkeys-00@openssh.com want_reply 0                         
+                                                 │ │ ▐ debug1: client_input_hostkeys: searching /root/.ssh/known_hosts for [23.252.105.155]:22133 / (none)     
+                                                 │ │ ▐ debug1: client_input_hostkeys: searching /root/.ssh/known_hosts2 for [23.252.105.155]:22133 / (none)    
+                                                 │ │ ▐ debug1: client_input_hostkeys: hostkeys file /root/.ssh/known_hosts2 does not exist                     
+                                                 │ │ ▐ debug1: client_input_hostkeys: no new or deprecated keys from server                                    
+                                                 │ │ ▐ debug1: pledge: fork                                                                                    
+                                                 │ │ ▐ debug1: Remote: /root/.ssh/authorized_keys:6: key options: agent-forwarding port-forwarding pty user-rc 
+                                                 │ │ ▐ x11-forwarding                                                                                          
+                                                 │ │ ▐ debug1: Remote: /root/.ssh/authorized_keys:6: key options: agent-forwarding port-forwarding pty user-rc 
+                                                 │ │ ▐ x11-forwarding                                                                                          
+                                                 │ │ ▐ debug1: channel 0: FORCE input drain                                                                    
+                                                 │ │ ▐ kex_exchange_identification: Connection closed by remote host                                           
+                                                 │ │ ▐ Connection closed by UNKNOWN port 65535                                                                 
+                                                 │ │ ▐ debug1: channel 0: free: direct-tcpip: listening port 0 for 118.145.101.7 port 22, connect from         
+                                                 │ │ ▐ 127.0.0.1 port 65535 to UNKNOWN port 65536, nchannels 1                                                 
+                                                 │ │ ▐ Killed by signal 1.                                                                                     
+                                                 │ │ ▐                                                                                                         
+                                                 │ │ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ 14.51s
+                                                 │ └─ ✓                                                                                                        
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+ [j/k]nav  [C-d/u]scroll  [tab]layout  [/]search  [esc]list  [q]uit  1/1 

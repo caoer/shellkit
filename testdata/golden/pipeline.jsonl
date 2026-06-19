@@ -1,0 +1,20 @@
+{"input":"### complex-bash\n{\"ssh\": \"host-1\", \"timeout\": 10}\n\n[[ -f /etc/os-release ]] \u0026\u0026 source /etc/os-release \u0026\u0026 echo \"OS: $PRETTY_NAME\"\ndf -h / | tail -1 | awk '{print \"Disk:\", $5, \"used\"}'\ncat /proc/loadavg 2\u003e/dev/null || echo \"no loadavg\"\ntest -d /tmp \u0026\u0026 ls /tmp | wc -l | xargs -I{} echo \"tmp files: {}\"\n","kind":"call-start","session_id":"","steps":[{"name":"complex-bash","action":"ssh","hosts":["host-1"],"body":"[[ -f /etc/os-release ]] \u0026\u0026 source /etc/os-release \u0026\u0026 echo \"OS: $PRETTY_NAME\""}],"ts":"2026-05-16T10:01:41.720049Z"}
+{"action":"ssh","hosts":["host-1"],"kind":"step-start","name":"complex-bash","step":0,"ts":"2026-05-16T10:01:41.720343Z"}
+{"cmd":"[[ -f /etc/os-release ]]","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":2,"name":"complex-bash","step":0,"ts":"2026-05-16T10:01:45.183861Z"}
+{"cmd":"source /etc/os-release","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":2,"name":"complex-bash","step":0,"ts":"2026-05-16T10:01:45.183921Z"}
+{"cmd":"echo \"OS: $PRETTY_NAME\"","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":2,"name":"complex-bash","step":0,"ts":"2026-05-16T10:01:45.183933Z"}
+{"host":"host-1","kind":"stdout","line":"OS: Debian GNU/Linux 12 (bookworm)","name":"complex-bash","step":0,"ts":"2026-05-16T10:01:45.183939Z"}
+{"cmd":"df -h /","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":3,"name":"complex-bash","step":0,"ts":"2026-05-16T10:01:45.18395Z"}
+{"cmd":"tail -1","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":3,"name":"complex-bash","step":0,"ts":"2026-05-16T10:01:45.185551Z"}
+{"cmd":"awk '{print \"Disk:\", $5, \"used\"}'","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":3,"name":"complex-bash","step":0,"ts":"2026-05-16T10:01:45.186246Z"}
+{"host":"host-1","kind":"stdout","line":"Disk: 57% used","name":"complex-bash","step":0,"ts":"2026-05-16T10:01:45.186274Z"}
+{"cmd":"cat /proc/loadavg 2\u003e /dev/null","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":4,"name":"complex-bash","step":0,"ts":"2026-05-16T10:01:45.187321Z"}
+{"host":"host-1","kind":"stdout","line":"0.10 0.04 0.01 1/296 689589","name":"complex-bash","step":0,"ts":"2026-05-16T10:01:45.443262Z"}
+{"cmd":"test -d /tmp","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":5,"name":"complex-bash","step":0,"ts":"2026-05-16T10:01:45.443425Z"}
+{"cmd":"ls /tmp","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":5,"name":"complex-bash","step":0,"ts":"2026-05-16T10:01:45.443462Z"}
+{"cmd":"wc -l","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":5,"name":"complex-bash","step":0,"ts":"2026-05-16T10:01:45.443472Z"}
+{"cmd":"xargs -I{} echo \"tmp files: {}\"","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":5,"name":"complex-bash","step":0,"ts":"2026-05-16T10:01:45.443479Z"}
+{"host":"host-1","kind":"stdout","line":"tmp files: 12","name":"complex-bash","step":0,"ts":"2026-05-16T10:01:45.443509Z"}
+{"host":"host-1","kind":"stdout","line":"","name":"complex-bash","step":0,"ts":"2026-05-16T10:01:45.443528Z"}
+{"duration_ms":3723,"exit_code":0,"kind":"step-end","name":"complex-bash","step":0,"ts":"2026-05-16T10:01:45.444162Z"}
+{"duration_ms":3724,"kind":"call-end","status":"ok","ts":"2026-05-16T10:01:45.444172Z"}

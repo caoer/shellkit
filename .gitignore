@@ -1,0 +1,23 @@
+# OS cruft
+.DS_Store
+
+# Editor dirs
+.idea/
+.vscode/
+
+# Nix
+result
+result-*
+.direnv/
+
+# Build / output
+dist/
+node_modules/
+target/
+*.log
+
+# Go
+/shellkit
+*.test
+*.out
+/sshkit

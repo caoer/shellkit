@@ -1,0 +1,15 @@
+# golangci-lint configuration for shellkit.
+# Conservative, signal-over-noise linter set suitable for a CLI/TUI codebase.
+# Runs the standard set (govet, ineffassign, staticcheck, unused) minus errcheck.
+version: "2"
+
+linters:
+  default: standard
+  disable:
+    # errcheck is noisy on fmt.Fprint*/Close() in a CLI where the error is not
+    # actionable. Left off for the initial release; tighten later if desired.
+    - errcheck
+
+formatters:
+  enable:
+    - gofmt

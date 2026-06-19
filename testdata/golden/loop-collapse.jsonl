@@ -1,0 +1,89 @@
+{"input":"### stream-test\n{\"ssh\": \"host-1\", \"timeout\": 15}\n\necho \"starting stream...\"\nfor i in $(seq 1 20); do\n  echo \"line $i: $(date +%H:%M:%S) — load: $(cat /proc/loadavg | cut -d' ' -f1-3)\"\n  sleep 0.3\ndone\necho \"stream complete\"\n","kind":"call-start","session_id":"","steps":[{"name":"stream-test","action":"ssh","hosts":["host-1"],"body":"echo \"starting stream...\""}],"ts":"2026-05-16T10:06:57.367414Z"}
+{"action":"ssh","hosts":["host-1"],"kind":"step-start","name":"stream-test","step":0,"ts":"2026-05-16T10:06:57.367753Z"}
+{"cmd":"echo \"starting stream...\"","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":2,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:01.757865Z"}
+{"host":"host-1","kind":"stdout","line":"starting stream...","name":"stream-test","step":0,"ts":"2026-05-16T10:07:01.757946Z"}
+{"cmd":"for i in $(seq 1 20)","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":3,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:01.757955Z"}
+{"cmd":"echo \"line $i: $(date +%H:%M:%S) — load: $(cat /proc/loadavg | cut -d' ' -f1-3)\"","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":4,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:01.757963Z"}
+{"host":"host-1","kind":"stdout","line":"line 1: 18:07:01 — load: 0.00 0.02 0.00","name":"stream-test","step":0,"ts":"2026-05-16T10:07:01.757983Z"}
+{"cmd":"sleep 0.3","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":5,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:01.757993Z"}
+{"cmd":"for i in $(seq 1 20)","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":3,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:01.757998Z"}
+{"cmd":"echo \"line $i: $(date +%H:%M:%S) — load: $(cat /proc/loadavg | cut -d' ' -f1-3)\"","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":4,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:01.758002Z"}
+{"host":"host-1","kind":"stdout","line":"line 2: 18:07:01 — load: 0.00 0.02 0.00","name":"stream-test","step":0,"ts":"2026-05-16T10:07:01.758015Z"}
+{"cmd":"sleep 0.3","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":5,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:01.758021Z"}
+{"cmd":"for i in $(seq 1 20)","elapsed_sec":1,"host":"host-1","kind":"executing","line_no":3,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:02.00109Z"}
+{"cmd":"echo \"line $i: $(date +%H:%M:%S) — load: $(cat /proc/loadavg | cut -d' ' -f1-3)\"","elapsed_sec":1,"host":"host-1","kind":"executing","line_no":4,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:02.001131Z"}
+{"host":"host-1","kind":"stdout","line":"line 3: 18:07:02 — load: 0.00 0.02 0.00","name":"stream-test","step":0,"ts":"2026-05-16T10:07:02.002762Z"}
+{"cmd":"sleep 0.3","elapsed_sec":1,"host":"host-1","kind":"executing","line_no":5,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:02.002799Z"}
+{"cmd":"for i in $(seq 1 20)","elapsed_sec":1,"host":"host-1","kind":"executing","line_no":3,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:02.329245Z"}
+{"cmd":"echo \"line $i: $(date +%H:%M:%S) — load: $(cat /proc/loadavg | cut -d' ' -f1-3)\"","elapsed_sec":1,"host":"host-1","kind":"executing","line_no":4,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:02.329295Z"}
+{"host":"host-1","kind":"stdout","line":"line 4: 18:07:02 — load: 0.00 0.02 0.00","name":"stream-test","step":0,"ts":"2026-05-16T10:07:02.330781Z"}
+{"cmd":"sleep 0.3","elapsed_sec":1,"host":"host-1","kind":"executing","line_no":5,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:02.330813Z"}
+{"cmd":"for i in $(seq 1 20)","elapsed_sec":1,"host":"host-1","kind":"executing","line_no":3,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:02.622992Z"}
+{"cmd":"echo \"line $i: $(date +%H:%M:%S) — load: $(cat /proc/loadavg | cut -d' ' -f1-3)\"","elapsed_sec":1,"host":"host-1","kind":"executing","line_no":4,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:02.623031Z"}
+{"host":"host-1","kind":"stdout","line":"line 5: 18:07:02 — load: 0.00 0.02 0.00","name":"stream-test","step":0,"ts":"2026-05-16T10:07:02.624302Z"}
+{"cmd":"sleep 0.3","elapsed_sec":1,"host":"host-1","kind":"executing","line_no":5,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:02.624337Z"}
+{"cmd":"for i in $(seq 1 20)","elapsed_sec":1,"host":"host-1","kind":"executing","line_no":3,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:02.92172Z"}
+{"cmd":"echo \"line $i: $(date +%H:%M:%S) — load: $(cat /proc/loadavg | cut -d' ' -f1-3)\"","elapsed_sec":1,"host":"host-1","kind":"executing","line_no":4,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:02.921752Z"}
+{"host":"host-1","kind":"stdout","line":"line 6: 18:07:02 — load: 0.00 0.02 0.00","name":"stream-test","step":0,"ts":"2026-05-16T10:07:02.923479Z"}
+{"cmd":"sleep 0.3","elapsed_sec":1,"host":"host-1","kind":"executing","line_no":5,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:02.9235Z"}
+{"cmd":"for i in $(seq 1 20)","elapsed_sec":2,"host":"host-1","kind":"executing","line_no":3,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:03.233135Z"}
+{"cmd":"echo \"line $i: $(date +%H:%M:%S) — load: $(cat /proc/loadavg | cut -d' ' -f1-3)\"","elapsed_sec":2,"host":"host-1","kind":"executing","line_no":4,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:03.233178Z"}
+{"host":"host-1","kind":"stdout","line":"line 7: 18:07:03 — load: 0.00 0.02 0.00","name":"stream-test","step":0,"ts":"2026-05-16T10:07:03.234426Z"}
+{"cmd":"sleep 0.3","elapsed_sec":2,"host":"host-1","kind":"executing","line_no":5,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:03.23445Z"}
+{"cmd":"for i in $(seq 1 20)","elapsed_sec":2,"host":"host-1","kind":"executing","line_no":3,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:03.534671Z"}
+{"cmd":"echo \"line $i: $(date +%H:%M:%S) — load: $(cat /proc/loadavg | cut -d' ' -f1-3)\"","elapsed_sec":2,"host":"host-1","kind":"executing","line_no":4,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:03.534704Z"}
+{"host":"host-1","kind":"stdout","line":"line 8: 18:07:03 — load: 0.00 0.02 0.00","name":"stream-test","step":0,"ts":"2026-05-16T10:07:03.537839Z"}
+{"cmd":"sleep 0.3","elapsed_sec":2,"host":"host-1","kind":"executing","line_no":5,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:03.537867Z"}
+{"cmd":"for i in $(seq 1 20)","elapsed_sec":2,"host":"host-1","kind":"executing","line_no":3,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:03.827963Z"}
+{"cmd":"echo \"line $i: $(date +%H:%M:%S) — load: $(cat /proc/loadavg | cut -d' ' -f1-3)\"","elapsed_sec":2,"host":"host-1","kind":"executing","line_no":4,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:03.827988Z"}
+{"host":"host-1","kind":"stdout","line":"line 9: 18:07:03 — load: 0.00 0.02 0.00","name":"stream-test","step":0,"ts":"2026-05-16T10:07:03.829904Z"}
+{"cmd":"sleep 0.3","elapsed_sec":2,"host":"host-1","kind":"executing","line_no":5,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:03.829931Z"}
+{"cmd":"for i in $(seq 1 20)","elapsed_sec":3,"host":"host-1","kind":"executing","line_no":3,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:04.141863Z"}
+{"cmd":"echo \"line $i: $(date +%H:%M:%S) — load: $(cat /proc/loadavg | cut -d' ' -f1-3)\"","elapsed_sec":3,"host":"host-1","kind":"executing","line_no":4,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:04.141896Z"}
+{"host":"host-1","kind":"stdout","line":"line 10: 18:07:04 — load: 0.00 0.02 0.00","name":"stream-test","step":0,"ts":"2026-05-16T10:07:04.144438Z"}
+{"cmd":"sleep 0.3","elapsed_sec":3,"host":"host-1","kind":"executing","line_no":5,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:04.144468Z"}
+{"cmd":"for i in $(seq 1 20)","elapsed_sec":3,"host":"host-1","kind":"executing","line_no":3,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:04.444986Z"}
+{"cmd":"echo \"line $i: $(date +%H:%M:%S) — load: $(cat /proc/loadavg | cut -d' ' -f1-3)\"","elapsed_sec":3,"host":"host-1","kind":"executing","line_no":4,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:04.445023Z"}
+{"host":"host-1","kind":"stdout","line":"line 11: 18:07:04 — load: 0.00 0.02 0.00","name":"stream-test","step":0,"ts":"2026-05-16T10:07:04.446515Z"}
+{"cmd":"sleep 0.3","elapsed_sec":3,"host":"host-1","kind":"executing","line_no":5,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:04.446558Z"}
+{"cmd":"for i in $(seq 1 20)","elapsed_sec":3,"host":"host-1","kind":"executing","line_no":3,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:04.733231Z"}
+{"cmd":"echo \"line $i: $(date +%H:%M:%S) — load: $(cat /proc/loadavg | cut -d' ' -f1-3)\"","elapsed_sec":3,"host":"host-1","kind":"executing","line_no":4,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:04.733289Z"}
+{"host":"host-1","kind":"stdout","line":"line 12: 18:07:04 — load: 0.00 0.02 0.00","name":"stream-test","step":0,"ts":"2026-05-16T10:07:04.734822Z"}
+{"cmd":"sleep 0.3","elapsed_sec":3,"host":"host-1","kind":"executing","line_no":5,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:04.734846Z"}
+{"cmd":"for i in $(seq 1 20)","elapsed_sec":4,"host":"host-1","kind":"executing","line_no":3,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:05.054509Z"}
+{"cmd":"echo \"line $i: $(date +%H:%M:%S) — load: $(cat /proc/loadavg | cut -d' ' -f1-3)\"","elapsed_sec":4,"host":"host-1","kind":"executing","line_no":4,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:05.054541Z"}
+{"host":"host-1","kind":"stdout","line":"line 13: 18:07:05 — load: 0.00 0.02 0.00","name":"stream-test","step":0,"ts":"2026-05-16T10:07:05.055641Z"}
+{"cmd":"sleep 0.3","elapsed_sec":4,"host":"host-1","kind":"executing","line_no":5,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:05.055668Z"}
+{"cmd":"for i in $(seq 1 20)","elapsed_sec":4,"host":"host-1","kind":"executing","line_no":3,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:05.355894Z"}
+{"cmd":"echo \"line $i: $(date +%H:%M:%S) — load: $(cat /proc/loadavg | cut -d' ' -f1-3)\"","elapsed_sec":4,"host":"host-1","kind":"executing","line_no":4,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:05.355921Z"}
+{"host":"host-1","kind":"stdout","line":"line 14: 18:07:05 — load: 0.00 0.02 0.00","name":"stream-test","step":0,"ts":"2026-05-16T10:07:05.357257Z"}
+{"cmd":"sleep 0.3","elapsed_sec":4,"host":"host-1","kind":"executing","line_no":5,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:05.357273Z"}
+{"cmd":"for i in $(seq 1 20)","elapsed_sec":4,"host":"host-1","kind":"executing","line_no":3,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:05.647603Z"}
+{"cmd":"echo \"line $i: $(date +%H:%M:%S) — load: $(cat /proc/loadavg | cut -d' ' -f1-3)\"","elapsed_sec":4,"host":"host-1","kind":"executing","line_no":4,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:05.647641Z"}
+{"host":"host-1","kind":"stdout","line":"line 15: 18:07:05 — load: 0.00 0.02 0.00","name":"stream-test","step":0,"ts":"2026-05-16T10:07:05.648637Z"}
+{"cmd":"sleep 0.3","elapsed_sec":4,"host":"host-1","kind":"executing","line_no":5,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:05.64866Z"}
+{"cmd":"for i in $(seq 1 20)","elapsed_sec":4,"host":"host-1","kind":"executing","line_no":3,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:05.965903Z"}
+{"cmd":"echo \"line $i: $(date +%H:%M:%S) — load: $(cat /proc/loadavg | cut -d' ' -f1-3)\"","elapsed_sec":4,"host":"host-1","kind":"executing","line_no":4,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:05.965945Z"}
+{"host":"host-1","kind":"stdout","line":"line 16: 18:07:05 — load: 0.00 0.02 0.00","name":"stream-test","step":0,"ts":"2026-05-16T10:07:05.967916Z"}
+{"cmd":"sleep 0.3","elapsed_sec":4,"host":"host-1","kind":"executing","line_no":5,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:05.967942Z"}
+{"cmd":"for i in $(seq 1 20)","elapsed_sec":5,"host":"host-1","kind":"executing","line_no":3,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:06.262953Z"}
+{"cmd":"echo \"line $i: $(date +%H:%M:%S) — load: $(cat /proc/loadavg | cut -d' ' -f1-3)\"","elapsed_sec":5,"host":"host-1","kind":"executing","line_no":4,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:06.262989Z"}
+{"host":"host-1","kind":"stdout","line":"line 17: 18:07:06 — load: 0.00 0.02 0.00","name":"stream-test","step":0,"ts":"2026-05-16T10:07:06.265331Z"}
+{"cmd":"sleep 0.3","elapsed_sec":5,"host":"host-1","kind":"executing","line_no":5,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:06.26536Z"}
+{"cmd":"for i in $(seq 1 20)","elapsed_sec":5,"host":"host-1","kind":"executing","line_no":3,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:06.556303Z"}
+{"cmd":"echo \"line $i: $(date +%H:%M:%S) — load: $(cat /proc/loadavg | cut -d' ' -f1-3)\"","elapsed_sec":5,"host":"host-1","kind":"executing","line_no":4,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:06.55634Z"}
+{"host":"host-1","kind":"stdout","line":"line 18: 18:07:06 — load: 0.00 0.02 0.00","name":"stream-test","step":0,"ts":"2026-05-16T10:07:06.557041Z"}
+{"cmd":"sleep 0.3","elapsed_sec":5,"host":"host-1","kind":"executing","line_no":5,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:06.557065Z"}
+{"cmd":"for i in $(seq 1 20)","elapsed_sec":5,"host":"host-1","kind":"executing","line_no":3,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:06.867417Z"}
+{"cmd":"echo \"line $i: $(date +%H:%M:%S) — load: $(cat /proc/loadavg | cut -d' ' -f1-3)\"","elapsed_sec":5,"host":"host-1","kind":"executing","line_no":4,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:06.867468Z"}
+{"host":"host-1","kind":"stdout","line":"line 19: 18:07:06 — load: 0.00 0.02 0.00","name":"stream-test","step":0,"ts":"2026-05-16T10:07:06.870727Z"}
+{"cmd":"sleep 0.3","elapsed_sec":5,"host":"host-1","kind":"executing","line_no":5,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:06.870762Z"}
+{"cmd":"for i in $(seq 1 20)","elapsed_sec":6,"host":"host-1","kind":"executing","line_no":3,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:07.174488Z"}
+{"cmd":"echo \"line $i: $(date +%H:%M:%S) — load: $(cat /proc/loadavg | cut -d' ' -f1-3)\"","elapsed_sec":6,"host":"host-1","kind":"executing","line_no":4,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:07.17452Z"}
+{"host":"host-1","kind":"stdout","line":"line 20: 18:07:07 — load: 0.00 0.02 0.00","name":"stream-test","step":0,"ts":"2026-05-16T10:07:07.175751Z"}
+{"cmd":"sleep 0.3","elapsed_sec":6,"host":"host-1","kind":"executing","line_no":5,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:07.175774Z"}
+{"cmd":"echo \"stream complete\"","elapsed_sec":6,"host":"host-1","kind":"executing","line_no":7,"name":"stream-test","step":0,"ts":"2026-05-16T10:07:07.461434Z"}
+{"host":"host-1","kind":"stdout","line":"stream complete","name":"stream-test","step":0,"ts":"2026-05-16T10:07:07.461473Z"}
+{"host":"host-1","kind":"stdout","line":"","name":"stream-test","step":0,"ts":"2026-05-16T10:07:07.461527Z"}
+{"duration_ms":10095,"exit_code":0,"kind":"step-end","name":"stream-test","step":0,"ts":"2026-05-16T10:07:07.463576Z"}
+{"duration_ms":10096,"kind":"call-end","status":"ok","ts":"2026-05-16T10:07:07.463594Z"}

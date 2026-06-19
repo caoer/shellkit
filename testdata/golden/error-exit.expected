@@ -1,0 +1,40 @@
+ shellkit logs 1 entries  [unified]
+ call:error-ex  step:check-tmux-workers  10:19:55  19ms
+▎ FAIL 05-16 10:19 19ms                          │ ┌─ check-tmux-workers [local] ✗ exit:1 19ms                                                                 
+▎ check-tmux-workers [local]                     │ │ ✓ tmux capture-pane -p -t ucc:worker.0 2>/dev/null | tail -20                                             
+▎ tmux capture-pane -p -t ucc:worker.0 2>/dev/n~ │ │       ✓ tmux capture-pane -p -t ucc:worker.0 2> /dev/null                                         (+0.00s)
+──────────────────────────────────────────────── │ │     | ✓ tail -20                                                                                  (+0.01s)
+                                                 │ │ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ 0.01s
+                                                 │ │ ✓ echo "==="                                                                                              
+                                                 │ │ ▐ ===                                                                                                     
+                                                 │ │ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ 0.01s
+                                                 │ │ ✓ tmux list-windows -t ucc -F "#{window_index}: #{window_name} #{window_active}"                          
+                                                 │ │ ▐ can't find session: ucc                                                                                 
+                                                 │ │ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ 0.02s
+                                                 │ └─ ✗ exit:1  19ms                                                                                           
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+ [j/k]nav  [C-d/u]scroll  [tab]layout  [/]search  [esc]list  [q]uit  1/1 

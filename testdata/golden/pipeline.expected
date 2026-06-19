@@ -1,0 +1,40 @@
+ shellkit logs 1 entries  [unified]
+ call:pipeline  step:complex-bash  → host-1  10:01:41  3.7s
+▎  OK  05-16 10:01 3.7s                          │ ┌─ complex-bash [ssh] → host-1 ✓ 3.7s                                                                       
+▎ complex-bash [ssh] → host-1                    │ │ ✓ [[ -f /etc/os-release ]] && source /etc/os-release && echo "OS: $PRETTY_NAME"                           
+▎ [[ -f /etc/os-release ]] && source /etc/os-re~ │ │       ✓ [[ -f /etc/os-release ]]                                                                  (+0.00s)
+──────────────────────────────────────────────── │ │     &&✓ source /etc/os-release                                                                    (+0.00s)
+                                                 │ │     &&✓ echo "OS: $PRETTY_NAME"                                                                   (+0.00s)
+                                                 │ │ ▐ OS: Debian GNU/Linux 12 (bookworm)                                                                      
+                                                 │ │ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ 3.46s
+                                                 │ │ ✓ df -h / | tail -1 | awk '{print "Disk:", $5, "used"}'                                                   
+                                                 │ │       ✓ df -h /                                                                                   (+0.00s)
+                                                 │ │     | ✓ tail -1                                                                                   (+0.00s)
+                                                 │ │     | ✓ awk '{print "Disk:", $5, "used"}'                                                         (+0.00s)
+                                                 │ │ ▐ Disk: 57% used                                                                                          
+                                                 │ │ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ 3.47s
+                                                 │ │ ✓ cat /proc/loadavg 2>/dev/null || echo "no loadavg"                                                      
+                                                 │ │       ✓ cat /proc/loadavg 2> /dev/null                                                            (+0.26s)
+                                                 │ │ ▐ 0.10 0.04 0.01 1/296 689589                                                                             
+                                                 │ │ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ 3.72s
+                                                 │ │ ✓ test -d /tmp && ls /tmp | wc -l | xargs -I{} echo "tmp files: {}"                                       
+                                                 │ │       ✓ test -d /tmp                                                                              (+0.00s)
+                                                 │ │     &&✓ ls /tmp                                                                                   (+0.00s)
+                                                 │ │     | ✓ wc -l                                                                                     (+0.00s)
+                                                 │ │     | ✓ xargs -I{} echo "tmp files: {}"                                                           (+3.46s)
+                                                 │ │ ▐ tmp files: 12                                                                                           
+                                                 │ │ ▐                                                                                                         
+                                                 │ │ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ 7.19s
+                                                 │ └─ ✓                                                                                                        
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+                                                 │                                                                                                             
+ [j/k]nav  [C-d/u]scroll  [tab]layout  [/]search  [esc]list  [q]uit  1/1 

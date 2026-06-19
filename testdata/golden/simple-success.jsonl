@@ -1,0 +1,26 @@
+{"input":"### net-check\n{\"ssh\": \"host-1\", \"timeout\": 10}\n\nuptime\nfree -h | head -3\nip -4 addr show | grep \"inet \" | head -5\necho \"---\"\nps aux | grep -c '[n]ginx' || true\n","kind":"call-start","session_id":"","steps":[{"name":"net-check","action":"ssh","hosts":["host-1"],"body":"uptime"}],"ts":"2026-05-16T09:59:52.218314Z"}
+{"action":"ssh","hosts":["host-1"],"kind":"step-start","name":"net-check","step":0,"ts":"2026-05-16T09:59:52.218437Z"}
+{"cmd":"uptime","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":2,"name":"net-check","step":0,"ts":"2026-05-16T09:59:56.405984Z"}
+{"host":"host-1","kind":"stdout","line":" 17:59:56 up 95 days, 23:18,  2 users,  load average: 0.07, 0.02, 0.00","name":"net-check","step":0,"ts":"2026-05-16T09:59:56.406977Z"}
+{"cmd":"free -h","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":3,"name":"net-check","step":0,"ts":"2026-05-16T09:59:56.407631Z"}
+{"cmd":"head -3","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":3,"name":"net-check","step":0,"ts":"2026-05-16T09:59:56.408032Z"}
+{"host":"host-1","kind":"stdout","line":"               total        used        free      shared  buff/cache   available","name":"net-check","step":0,"ts":"2026-05-16T09:59:56.40871Z"}
+{"host":"host-1","kind":"stdout","line":"Mem:            11Gi       1.3Gi       991Mi       1.3Mi       9.7Gi        10Gi","name":"net-check","step":0,"ts":"2026-05-16T09:59:56.409673Z"}
+{"host":"host-1","kind":"stdout","line":"Swap:           87Gi          0B        87Gi","name":"net-check","step":0,"ts":"2026-05-16T09:59:56.40969Z"}
+{"cmd":"ip -4 addr show","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":4,"name":"net-check","step":0,"ts":"2026-05-16T09:59:56.411231Z"}
+{"cmd":"grep \"inet \"","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":4,"name":"net-check","step":0,"ts":"2026-05-16T09:59:56.411376Z"}
+{"cmd":"head -5","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":4,"name":"net-check","step":0,"ts":"2026-05-16T09:59:56.412388Z"}
+{"host":"host-1","kind":"stdout","line":"    inet 127.0.0.1/8 scope host lo","name":"net-check","step":0,"ts":"2026-05-16T09:59:56.413066Z"}
+{"host":"host-1","kind":"stdout","line":"    inet 172.18.0.12/24 brd 172.18.0.255 scope global eth0","name":"net-check","step":0,"ts":"2026-05-16T09:59:56.413079Z"}
+{"host":"host-1","kind":"stdout","line":"    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0","name":"net-check","step":0,"ts":"2026-05-16T09:59:56.413087Z"}
+{"host":"host-1","kind":"stdout","line":"    inet 172.19.0.1/16 brd 172.19.255.255 scope global br-b82573629b72","name":"net-check","step":0,"ts":"2026-05-16T09:59:56.413097Z"}
+{"host":"host-1","kind":"stdout","line":"    inet 10.42.15.1/24 brd 10.42.15.255 scope global cni0","name":"net-check","step":0,"ts":"2026-05-16T09:59:56.413105Z"}
+{"cmd":"echo \"---\"","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":5,"name":"net-check","step":0,"ts":"2026-05-16T09:59:56.41526Z"}
+{"host":"host-1","kind":"stdout","line":"---","name":"net-check","step":0,"ts":"2026-05-16T09:59:56.415279Z"}
+{"cmd":"ps aux","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":6,"name":"net-check","step":0,"ts":"2026-05-16T09:59:56.415523Z"}
+{"cmd":"grep -c '[n]ginx'","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":6,"name":"net-check","step":0,"ts":"2026-05-16T09:59:56.416729Z"}
+{"host":"host-1","kind":"stdout","line":"0","name":"net-check","step":0,"ts":"2026-05-16T09:59:56.422202Z"}
+{"cmd":"true","elapsed_sec":0,"host":"host-1","kind":"executing","line_no":6,"name":"net-check","step":0,"ts":"2026-05-16T09:59:56.422298Z"}
+{"host":"host-1","kind":"stdout","line":"","name":"net-check","step":0,"ts":"2026-05-16T09:59:56.422312Z"}
+{"duration_ms":4242,"exit_code":0,"kind":"step-end","name":"net-check","step":0,"ts":"2026-05-16T09:59:56.460581Z"}
+{"duration_ms":4242,"kind":"call-end","status":"ok","ts":"2026-05-16T09:59:56.460601Z"}
