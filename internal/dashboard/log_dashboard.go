@@ -809,18 +809,13 @@ func (m *ldModel) buildDetail() {
 	idx := m.filtered[m.cursor]
 	e := &m.merged[idx]
 
+	// Right column: waterfall (from event files or live state).
+	// Same rendering path as the unified view — renderResultLines only has
+	// exit codes, not stdout/stderr, so the waterfall is the only source.
+	rightLines := m.ensureCellRight(e.ID)
+
 	if m.zoomed {
-		// Full-width: show only the right (log/result) column.
-		fullW := m.width - 4
-		if fullW < 20 {
-			fullW = 20
-		}
-		var rightLines []string
-		if a, ok := m.active[e.ID]; ok {
-			rightLines = renderLiveLines(a, fullW)
-		} else {
-			rightLines = renderResultLines(e, fullW, 0, true)
-		}
+		// Full-width: show only the right (waterfall) column.
 		var lines []string
 		for _, r := range rightLines {
 			lines = append(lines, "  "+r)
@@ -829,13 +824,7 @@ func (m *ldModel) buildDetail() {
 	} else {
 		leftW, rightW := m.colWidths()
 		leftLines := renderInputLines(e, leftW)
-
-		var rightLines []string
-		if a, ok := m.active[e.ID]; ok {
-			rightLines = renderLiveLines(a, rightW)
-		} else {
-			rightLines = renderResultLines(e, rightW, 0, true)
-		}
+		_ = rightW // waterfall was rendered at rightColWidth() via ensureCellRight
 
 		rows := max(len(leftLines), len(rightLines))
 		sep := ldColSep.Render(" │ ")
