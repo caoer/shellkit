@@ -781,17 +781,20 @@ func CLICheck(servers []inventory.Server, jsonOutput bool) {
 }
 
 type listEntryJSON struct {
-	Group    string `json:"group"`
-	Provider string `json:"provider"`
-	Name     string `json:"name"`
-	IP       string `json:"wan_ip"`
-	Port     int    `json:"port"`
-	User     string `json:"user"`
-	Location string `json:"location"`
-	State    string `json:"state"`
-	Project  string `json:"project"`
-	Managed  string `json:"managed,omitempty"`
-	SSHAlias string `json:"ssh_alias,omitempty"`
+	Group      string `json:"group"`
+	Provider   string `json:"provider"`
+	Name       string `json:"name"`
+	IP         string `json:"wan_ip"`
+	ResolvedIP string `json:"resolved_ip,omitempty"`
+	Port       int    `json:"port"`
+	SSHPort    int    `json:"ssh_port"`
+	User       string `json:"user"`
+	Identity   string `json:"identity,omitempty"`
+	Location   string `json:"location"`
+	State      string `json:"state"`
+	Project    string `json:"project"`
+	Managed    string `json:"managed,omitempty"`
+	SSHAlias   string `json:"ssh_alias,omitempty"`
 }
 
 type checkEntryJSON struct {
@@ -818,18 +821,23 @@ func printJSON(servers []inventory.Server) {
 		if port == 0 {
 			port = 22
 		}
+		resolved := s.ResolvedIP()
+		sshPort := s.PortFor(resolved)
 		out = append(out, listEntryJSON{
-			Group:    s.Group,
-			Provider: s.Provider,
-			Name:     s.Name,
-			IP:       s.IP,
-			Port:     port,
-			User:     s.DisplayUser(),
-			Location: s.Location,
-			State:    s.State,
-			Project:  s.Project,
-			Managed:  s.Managed,
-			SSHAlias: s.SSHAlias,
+			Group:      s.Group,
+			Provider:   s.Provider,
+			Name:       s.Name,
+			IP:         s.IP,
+			ResolvedIP: resolved,
+			Port:       port,
+			SSHPort:    sshPort,
+			User:       s.DisplayUser(),
+			Identity:   s.Identity,
+			Location:   s.Location,
+			State:      s.State,
+			Project:    s.Project,
+			Managed:    s.Managed,
+			SSHAlias:   s.SSHAlias,
 		})
 	}
 	writeJSON(out)
