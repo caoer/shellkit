@@ -572,10 +572,14 @@ func (m ldModel) viewDetail() string {
 	if m.detailZoomed {
 		layoutTag = "zoom"
 	}
-	fmt.Fprintf(&b, " %s  %s  %s  session:%s  dur:%s  id:%s  [%s]\n\n",
+	fmt.Fprintf(&b, " %s  %s  %s  session:%s  dur:%s  id:%s  [%s]\n",
 		ldTitle.Render("detail"),
 		badge, ts, ldAccent.Render(sid), dur,
 		ldDim.Render(e.ID), ldDim.Render(layoutTag))
+
+	// Input parameter preview — always visible, even in zoomed mode.
+	inputPreview := e.InputPreview(m.width - 12)
+	fmt.Fprintf(&b, " %s %s\n", ldDim.Render("input:"), ldDSLBody.Render(inputPreview))
 
 	// scrollable body — viewport handles scroll window + padding
 	b.WriteString(m.detailVP.View())
@@ -795,7 +799,7 @@ func extractBodies(input string) []string {
 
 func (m *ldModel) buildDetail() {
 	m.detailVP.Width = m.width
-	m.detailVP.Height = max(1, m.height-4)
+	m.detailVP.Height = max(1, m.height-5)
 
 	if len(m.filtered) == 0 {
 		m.detailVP.SetContent("")
