@@ -300,36 +300,19 @@ func probePassword(s *inventory.Server, addr string, result ProbeResult, timeout
 	return result
 }
 
-// ProbeExtraKeys tries every agent key individually against a host that
-// already passed auth, returning labels of keys that also authenticate.
-// The configured key (result.KeyUsed) is excluded from the list.
-func ProbeExtraKeys(s *inventory.Server, timeout time.Duration) []string {
+// ProbeExtraKeys tries each key path individually against a host,
+// returning paths of keys that successfully authenticate.
+// Handles encrypted keys by matching .pub against the SSH agent.
+func ProbeExtraKeys(s *inventory.Server, keyPaths []string, timeout time.Duration) []string {
 	addr := s.ConnectAddr()
 	agents := agentSigners()
-	if len(agents) == 0 {
-		return nil
-	}
 
-	// Identify the configured key's public fingerprint so we can skip it
-	var configuredPub []byte
-	keyPaths := s.KeyPaths()
-	if pub := loadPublicKey(keyPaths); pub != nil {
-		configuredPub = pub.Marshal()
-	} else {
-		// Try loading the private key to get its public key
-		signers := loadSigners(keyPaths)
-		if len(signers) > 0 {
-			configuredPub = signers[0].PublicKey().Marshal()
-		}
-	}
-
-	var extra []string
-	for _, signer := range agents {
-		// Skip the configured key
-		if configuredPub != nil && string(signer.PublicKey().Marshal()) == string(configuredPub) {
+	var succeeded []string
+	for _, p := range keyPaths {
+		signer := resolveKeyOrAgent(p, agents)
+		if signer == nil {
 			continue
 		}
-
 		config := &ssh.ClientConfig{
 			User:            s.DisplayUser(),
 			Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
@@ -341,11 +324,32 @@ func ProbeExtraKeys(s *inventory.Server, timeout time.Duration) []string {
 			continue
 		}
 		client.Close()
-
-		fp := ssh.FingerprintSHA256(signer.PublicKey())
-		extra = append(extra, fp)
+		succeeded = append(succeeded, p)
 	}
-	return extra
+	return succeeded
+}
+
+// resolveKeyOrAgent loads a private key from disk, or if encrypted,
+// matches its .pub against agent signers to find the corresponding signer.
+func resolveKeyOrAgent(path string, agents []ssh.Signer) ssh.Signer {
+	data, err := os.ReadFile(path)
+	if err == nil {
+		if signer, err := ssh.ParsePrivateKey(data); err == nil {
+			return signer
+		}
+	}
+	// Encrypted or unreadable — try .pub match against agent
+	pub := loadPublicKey([]string{path})
+	if pub == nil {
+		return nil
+	}
+	pubBytes := pub.Marshal()
+	for _, signer := range agents {
+		if string(signer.PublicKey().Marshal()) == string(pubBytes) {
+			return signer
+		}
+	}
+	return nil
 }
 
 type ProbeCallback func(result ProbeResult, done int, total int)

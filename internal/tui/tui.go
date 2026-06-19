@@ -732,7 +732,7 @@ func CLIList(servers []inventory.Server, jsonOutput bool) {
 	}
 }
 
-func CLICheck(servers []inventory.Server, jsonOutput bool, extraKeys bool, disableDefaultKey bool, disablePassword bool) {
+func CLICheck(servers []inventory.Server, jsonOutput bool, extraKeyPaths []string, disableDefaultKey bool, disablePassword bool) {
 	fmt.Fprintf(os.Stderr, "Probing %d servers...\n", len(servers))
 	opts := sshconn.ProbeOptions{DisableDefaultKey: disableDefaultKey, DisablePassword: disablePassword}
 	results := sshconn.ProbeAll(servers, 20, 5*time.Second, opts, func(r sshconn.ProbeResult, done, total int) {
@@ -740,8 +740,8 @@ func CLICheck(servers []inventory.Server, jsonOutput bool, extraKeys bool, disab
 	})
 	fmt.Fprintln(os.Stderr)
 
-	if extraKeys {
-		// For auth-ok hosts, probe which extra agent keys also work
+	if len(extraKeyPaths) > 0 {
+		// For auth-ok hosts, try each extra key individually
 		var authOKResults []int
 		for i, r := range results {
 			if r.Status == sshconn.StatusAuthOK {
@@ -749,7 +749,7 @@ func CLICheck(servers []inventory.Server, jsonOutput bool, extraKeys bool, disab
 			}
 		}
 		if len(authOKResults) > 0 {
-			fmt.Fprintf(os.Stderr, "Probing extra keys on %d hosts...\n", len(authOKResults))
+			fmt.Fprintf(os.Stderr, "Probing %d extra keys on %d hosts...\n", len(extraKeyPaths), len(authOKResults))
 			var wg sync.WaitGroup
 			var mu sync.Mutex
 			sem := make(chan struct{}, 10)
@@ -760,7 +760,7 @@ func CLICheck(servers []inventory.Server, jsonOutput bool, extraKeys bool, disab
 					defer wg.Done()
 					sem <- struct{}{}
 					defer func() { <-sem }()
-					extra := sshconn.ProbeExtraKeys(results[i].Server, 5*time.Second)
+					extra := sshconn.ProbeExtraKeys(results[i].Server, extraKeyPaths, 5*time.Second)
 					mu.Lock()
 					results[i].ExtraKeys = extra
 					done++

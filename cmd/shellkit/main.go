@@ -96,7 +96,7 @@ Flags:
   --json             JSON output (list/check only)
   --managed <value>  Filter to hosts with managed=<value> (e.g. osfiles)
   --addr <pref>      Address preference: auto|wan|lan|wireguard|tailscale|easytier (default: auto)
-  --extra-keys       For auth-ok hosts, probe which other agent keys also authenticate (check only)
+  --extra-keys <path>  Try key against auth-ok hosts (repeatable; check only)
   --disable-default-key  Skip default identity fallback; no-key hosts report no-key instead of probing
   --disable-password     Skip password auth; password_ref hosts report auth-fail without resolving sops
   -h                 Help
@@ -116,7 +116,7 @@ Environment:
 // position relative to the subcommand. The Go stdlib `flag` stops parsing at
 // the first positional, so without this, `shellkit list --json` would silently
 // ignore the flag.
-func extractGlobalFlags(args []string) (inventoryPath string, jsonOutput bool, managedFilter string, addrPrefStr string, extraKeys bool, disableDefaultKey bool, disablePassword bool, rest []string) {
+func extractGlobalFlags(args []string) (inventoryPath string, jsonOutput bool, managedFilter string, addrPrefStr string, extraKeyPaths []string, disableDefaultKey bool, disablePassword bool, rest []string) {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
@@ -158,7 +158,14 @@ func extractGlobalFlags(args []string) (inventoryPath string, jsonOutput bool, m
 		case strings.HasPrefix(a, "--addr="):
 			addrPrefStr = strings.SplitN(a, "=", 2)[1]
 		case a == "--extra-keys":
-			extraKeys = true
+			if i+1 >= len(args) {
+				fmt.Fprintln(os.Stderr, "error: --extra-keys requires a key path")
+				os.Exit(1)
+			}
+			extraKeyPaths = append(extraKeyPaths, args[i+1])
+			i++
+		case strings.HasPrefix(a, "--extra-keys="):
+			extraKeyPaths = append(extraKeyPaths, strings.SplitN(a, "=", 2)[1])
 		case a == "--disable-default-key":
 			disableDefaultKey = true
 		case a == "--disable-password":
@@ -173,7 +180,7 @@ func extractGlobalFlags(args []string) (inventoryPath string, jsonOutput bool, m
 func main() {
 	flag.Usage = usage
 
-	inventoryPath, jsonOutput, managedFilter, addrPrefStr, extraKeys, disableDefaultKey, disablePassword, rest := extractGlobalFlags(os.Args[1:])
+	inventoryPath, jsonOutput, managedFilter, addrPrefStr, extraKeyPaths, disableDefaultKey, disablePassword, rest := extractGlobalFlags(os.Args[1:])
 
 	// version needs no inventory — handle it before the inventory check.
 	if len(rest) > 0 && rest[0] == "version" {
@@ -263,7 +270,7 @@ func main() {
 			}
 			servers = filtered
 		}
-		tui.CLICheck(servers, jsonOutput, extraKeys, disableDefaultKey, disablePassword)
+		tui.CLICheck(servers, jsonOutput, extraKeyPaths, disableDefaultKey, disablePassword)
 	case "generate-configs":
 		nukeControlSockets()
 		if dest := os.Getenv("SHELLKIT_GENERATED_CONFIG_PATH"); dest != "" {
