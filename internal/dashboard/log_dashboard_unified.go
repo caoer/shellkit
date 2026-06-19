@@ -683,7 +683,7 @@ func (m ldModel) viewUnified() string {
 	}
 	lag := m.lagIndicator()
 	b.WriteString(ldBar.Render(fmt.Sprintf(
-		" [j/k]nav  [C-d/u]scroll  [tab]layout  [z]zoom  [/]search  [esc]list  [q]uit  %d/%d%s ",
+		" [j/k]nav  [C-d/u]scroll  [d]detail  [tab]layout  [z]zoom  [/]search  [esc]list  [q]uit  %d/%d%s ",
 		cur, len(m.filtered), pos)) + zoom + lag)
 	return b.String()
 }
@@ -777,6 +777,12 @@ func (m ldModel) handleUnifiedKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.unifiedRightVP.HalfPageUp()
 	case "shift+g":
 		m.unifiedRightVP.GotoBottom()
+	case "d", "D":
+		if len(m.filtered) > 0 {
+			m.view = ldViewDetail
+			m.detailVP.GotoTop()
+			m.buildDetail()
+		}
 	case "tab":
 		m.layout = (m.layout + 1) % ldLayoutCount
 		m.cacheInvalidateAll()
