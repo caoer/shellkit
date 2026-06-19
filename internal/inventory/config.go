@@ -225,16 +225,6 @@ func DefaultIdentityRef() string {
 	return "~/.ssh/id_ed25519"
 }
 
-// ForgeIdentityRef is the SSH identity used for git forges (GitHub, GitLab,
-// Bitbucket). Override with SHELLKIT_FORGE_IDENTITY. Defaults to
-// ~/.ssh/mac_m4_ed25519.
-func ForgeIdentityRef() string {
-	if v := os.Getenv("SHELLKIT_FORGE_IDENTITY"); v != "" {
-		return v
-	}
-	return "~/.ssh/mac_m4_ed25519"
-}
-
 // defaultIdentity is DefaultIdentityRef expanded to an absolute path.
 func defaultIdentity() string {
 	return expandHome(DefaultIdentityRef())
