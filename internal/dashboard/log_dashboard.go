@@ -1335,20 +1335,6 @@ func formatParamTags(params map[string]string) string {
 	return ldDim.Render(" " + strings.Join(tags, " "))
 }
 
-// extractJSONLines pulls JSON config lines from a raw DSL input string.
-// These are lines like {"ssh": "host", "timeout": 30}. Multiple JSON lines
-// are joined with "  " so the result fits a single breadcrumb line.
-func extractJSONLines(input string) string {
-	var jsons []string
-	for _, line := range strings.Split(input, "\n") {
-		t := strings.TrimSpace(line)
-		if strings.HasPrefix(t, "{") && strings.HasSuffix(t, "}") {
-			jsons = append(jsons, t)
-		}
-	}
-	return strings.Join(jsons, "  ")
-}
-
 func colorizeDSL(line string) string {
 	trimmed := strings.TrimSpace(line)
 	switch {

@@ -40,6 +40,7 @@ type waterfallStep struct {
 	Name       string
 	Action     string
 	Hosts      []string
+	Params     map[string]string // config params: timeout, trace, entrypoint, etc.
 	Started    bool
 	Ended      bool
 	ExitCode   int

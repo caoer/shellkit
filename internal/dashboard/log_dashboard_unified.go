@@ -143,8 +143,9 @@ func renderStepHeader(step waterfallStep, w int) string {
 	if step.Ended && step.DurationMs > 0 {
 		stat += " " + ldDim.Render(formatDuration(step.DurationMs))
 	}
+	ptags := formatParamTags(step.Params)
 	return wfRail.Render("┌─ ") + wfStepHdr.Render(step.Name) + " " +
-		ldFaint.Render("["+step.Action+"]") + hosts + stat
+		ldFaint.Render("["+step.Action+"]") + hosts + ptags + stat
 }
 
 func renderStepFooter(step waterfallStep, w int) string {
@@ -718,18 +719,6 @@ func (m ldModel) selectedBreadcrumb() string {
 		parts = append(parts, ldLiveDot.Render("●")+" "+ldDim.Render(formatCompactDur(elapsed)))
 	} else if e.DurationMs > 0 {
 		parts = append(parts, ldDim.Render(formatDuration(e.DurationMs)))
-	}
-
-	// JSON config lines from the DSL input (e.g. {"ssh": "host", "timeout": 30})
-	if jsonConf := extractJSONLines(e.Input); jsonConf != "" {
-		metaW := 0
-		for _, p := range parts {
-			metaW += ui.VisibleLen(p) + 2
-		}
-		confW := m.width - metaW - 6
-		if confW > 20 {
-			parts = append(parts, ldDSLConf.Render(ui.Truncate(jsonConf, confW)))
-		}
 	}
 
 	return strings.Join(parts, "  ")

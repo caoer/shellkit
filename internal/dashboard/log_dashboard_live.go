@@ -491,6 +491,7 @@ func (a *activeCall) wfInitWaterfall(ev mcp.LiveEvent) {
 			Name:   s.Name,
 			Action: s.Action,
 			Hosts:  s.Hosts,
+			Params: s.Params,
 		}
 		if i < len(a.parsedBodies) {
 			// Own backing array so incremental mutations don't alias parsedBodies.

@@ -1,5 +1,5 @@
  shellkit logs 1 entries  [unified]
- call:ssh-verb  step:retry-ssh  → host-2  13:00:42  10.5s  {"ssh": "host-2", "timeout": 30}
+ call:ssh-verb  step:retry-ssh  → host-2  13:00:42  10.5s
 ▎  OK  05-16 13:00 10.5s                         │ ┌─ retry-ssh [ssh] → host-2 ✓ 10.5s                                                                         
 ▎ retry-ssh [ssh] → host-2                       │ │ ✓ sleep 5 && ssh -v -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=15      
 ▎ sleep 5 && ssh -v -o StrictHostKeyChecking=no~ │ │   root@118.145.101.7 'echo SSH_OK' 2>&1 | tail -20                                                        
