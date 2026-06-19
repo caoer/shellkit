@@ -66,7 +66,6 @@ func GenerateSSHConfig(servers []inventory.Server, w io.Writer) {
 	fmt.Fprintln(w, "  UseKeychain yes")
 	fmt.Fprintln(w, "  StrictHostKeyChecking no")
 	fmt.Fprintln(w, "  UserKnownHostsFile /dev/null")
-	fmt.Fprintf(w, "  IdentityFile %s\n", inventory.DefaultIdentityRef())
 	fmt.Fprintln(w, "  IdentitiesOnly yes")
 	fmt.Fprintln(w, "  LogLevel ERROR")
 	fmt.Fprintln(w, "  ServerAliveInterval 60")
