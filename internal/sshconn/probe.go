@@ -69,6 +69,23 @@ type ProbeResult struct {
 	Error   string
 }
 
+// loadPublicKey tries <path>.pub for each path and returns the first valid
+// public key. Used to match encrypted private keys against agent signers.
+func loadPublicKey(paths []string) ssh.PublicKey {
+	for _, p := range paths {
+		data, err := os.ReadFile(p + ".pub")
+		if err != nil {
+			continue
+		}
+		pub, _, _, _, err := ssh.ParseAuthorizedKey(data)
+		if err != nil {
+			continue
+		}
+		return pub
+	}
+	return nil
+}
+
 func loadSigners(paths []string) []ssh.Signer {
 	var signers []ssh.Signer
 	seen := make(map[string]bool)
@@ -150,12 +167,25 @@ func ProbeServer(s *inventory.Server, timeout time.Duration) ProbeResult {
 		named = append(named, namedSigner{signer, keyPaths[i]})
 	}
 
-	// Mirror IdentitiesOnly: when file keys are available, skip agent keys
-	// entirely. This prevents multi-key ambiguity and avoids triggering
-	// provider abuse detection from extra auth attempts.
+	// Mirror IdentitiesOnly: when file keys load (unencrypted), skip agent.
+	// When file keys are encrypted (ParsePrivateKey fails), match the .pub
+	// fingerprint against agent keys to identify the correct one.
 	if len(named) == 0 {
-		for _, signer := range agentSigners() {
-			named = append(named, namedSigner{signer, "(agent)"})
+		agents := agentSigners()
+		if pub := loadPublicKey(keyPaths); pub != nil {
+			pubBytes := pub.Marshal()
+			for _, signer := range agents {
+				if string(signer.PublicKey().Marshal()) == string(pubBytes) {
+					named = append(named, namedSigner{signer, keyPaths[0]})
+					break
+				}
+			}
+		}
+		// No .pub match — fall back to all agent keys
+		if len(named) == 0 {
+			for _, signer := range agents {
+				named = append(named, namedSigner{signer, "(agent)"})
+			}
 		}
 	}
 

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/caoer/shellkit/internal/dashboard"
@@ -78,7 +79,7 @@ func usage() {
 Usage:
   shellkit                    Interactive TUI (default)
   shellkit list               Print server table
-  shellkit check              Probe all servers
+  shellkit check [pattern]    Probe servers (optional regex filter on name/alias)
   shellkit ssh <name>         SSH into a server by name/alias
   shellkit generate-configs   Generate SSH config (writes to SHELLKIT_GENERATED_CONFIG_PATH or stdout)
   shellkit version            Print version and exit
@@ -239,6 +240,20 @@ func main() {
 	case "list":
 		tui.CLIList(servers, jsonOutput)
 	case "check":
+		if len(rest) > 0 {
+			re, err := regexp.Compile("(?i)" + rest[0])
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "invalid pattern: %v\n", err)
+				os.Exit(1)
+			}
+			filtered := servers[:0]
+			for _, s := range servers {
+				if re.MatchString(s.Name) || re.MatchString(s.SSHAlias) {
+					filtered = append(filtered, s)
+				}
+			}
+			servers = filtered
+		}
 		tui.CLICheck(servers, jsonOutput)
 	case "generate-configs":
 		nukeControlSockets()
