@@ -795,7 +795,15 @@ func CLICheck(servers []inventory.Server, jsonOutput bool, extraKeyPaths []strin
 		}
 		extra := ""
 		if len(r.ExtraKeys) > 0 {
-			extra = "  +extra: " + strings.Join(r.ExtraKeys, ", ")
+			label := "also"
+			if r.Status == sshconn.StatusAuthFail {
+				label = "works"
+			}
+			short := make([]string, len(r.ExtraKeys))
+			for i, k := range r.ExtraKeys {
+				short[i] = shortPath(k)
+			}
+			extra = "  [" + label + ": " + strings.Join(short, ", ") + "]"
 		}
 		fmt.Printf("%-14s %-20s %-17s %-8s %8s  %s%s\n",
 			r.Server.Provider, r.Server.Name, r.Server.IP,
