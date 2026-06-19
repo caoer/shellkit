@@ -809,13 +809,12 @@ func (m *ldModel) buildDetail() {
 	idx := m.filtered[m.cursor]
 	e := &m.merged[idx]
 
-	// Right column: waterfall (from event files or live state).
-	// Same rendering path as the unified view — renderResultLines only has
-	// exit codes, not stdout/stderr, so the waterfall is the only source.
-	rightLines := m.ensureCellRight(e.ID)
+	// Right column: output-focused view extracted from the waterfall.
+	// Unlike the unified view's execution timeline, the detail view shows
+	// clean stdout/stderr blocks per step — a log reader, not a debugger.
+	rightLines := m.renderDetailOutput(e)
 
 	if m.zoomed {
-		// Full-width: show only the right (waterfall) column.
 		var lines []string
 		for _, r := range rightLines {
 			lines = append(lines, "  "+r)
@@ -824,7 +823,6 @@ func (m *ldModel) buildDetail() {
 	} else {
 		leftW, rightW := m.colWidths()
 		leftLines := renderInputLines(e, leftW)
-		_ = rightW // waterfall was rendered at rightColWidth() via ensureCellRight
 
 		rows := max(len(leftLines), len(rightLines))
 		sep := ldColSep.Render(" │ ")
@@ -844,6 +842,77 @@ func (m *ldModel) buildDetail() {
 
 		m.detailVP.SetContent(strings.Join(lines, "\n"))
 	}
+}
+
+// renderDetailOutput produces a clean output-focused right column for the
+// detail view. Shows per-step headers with exit status, then raw stdout/stderr
+// blocks — a log reader view, distinct from the unified view's execution
+// waterfall. For active calls, falls back to renderLiveLines.
+func (m *ldModel) renderDetailOutput(e *mcp.CallEntry) []string {
+	// Active calls: use the live view.
+	if a, ok := m.active[e.ID]; ok {
+		w := m.rightColWidth()
+		return renderLiveLines(a, w)
+	}
+
+	w := m.rightColWidth()
+
+	// Load waterfall steps to extract output.
+	_, steps, err := loadStaticWaterfall(e.ID)
+	if err != nil || len(steps) == 0 {
+		// No waterfall data — show what we can from ResultBrief.
+		return renderResultLines(e, w, 0, true)
+	}
+
+	var lines []string
+	for si, step := range steps {
+		if si > 0 {
+			lines = append(lines, "")
+		}
+
+		// Step header: name [action] → hosts  exit:N  duration
+		hdr := ldStepName.Render(step.Name) + " " + ldFaint.Render("["+step.Action+"]")
+		if len(step.Hosts) > 0 {
+			hdr += " " + ldArrow.Render("→") + " " + ldHostTag.Render(strings.Join(step.Hosts, ", "))
+		}
+		if step.Ended {
+			if step.ExitCode == 0 {
+				hdr += "  " + ldOk.Render("✓")
+			} else {
+				hdr += "  " + ldFail.Render(fmt.Sprintf("✗ exit:%d", step.ExitCode))
+			}
+			if step.DurationMs > 0 {
+				hdr += "  " + ldDim.Render(formatDuration(step.DurationMs))
+			}
+		}
+		lines = append(lines, hdr)
+
+		// Config line
+		if step.ConfigLine != "" {
+			lines = append(lines, ldDSLConf.Render(step.ConfigLine))
+		}
+		lines = append(lines, "")
+
+		// Collect all output across all source lines for this step.
+		hasOutput := false
+		for _, sl := range step.Lines {
+			for _, o := range sl.Output {
+				hasOutput = true
+				text := strings.ReplaceAll(o.Text, "\r", "")
+				style := ldStdout
+				if o.Stream == "stderr" {
+					style = ldWarn
+				}
+				for _, wl := range wrapToWidth(text, w-2) {
+					lines = append(lines, style.Render(wl))
+				}
+			}
+		}
+		if !hasOutput {
+			lines = append(lines, ldDim.Render("(no output)"))
+		}
+	}
+	return lines
 }
 
 // renderLiveCompact is the list-view (compact) variant of renderLiveLines —
