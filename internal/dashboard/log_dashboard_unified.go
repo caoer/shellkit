@@ -143,9 +143,8 @@ func renderStepHeader(step waterfallStep, w int) string {
 	if step.Ended && step.DurationMs > 0 {
 		stat += " " + ldDim.Render(formatDuration(step.DurationMs))
 	}
-	ptags := formatParamTags(step.Params)
 	return wfRail.Render("┌─ ") + wfStepHdr.Render(step.Name) + " " +
-		ldFaint.Render("["+step.Action+"]") + hosts + ptags + stat
+		ldFaint.Render("["+step.Action+"]") + hosts + stat
 }
 
 func renderStepFooter(step waterfallStep, w int) string {
