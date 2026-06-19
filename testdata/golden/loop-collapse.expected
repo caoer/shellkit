@@ -37,4 +37,4 @@
                                                  │ │ ▐                                                                                                         
                                                  │ │ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ 14.49s
                                                  │ └─ ✓                                                                                                        
- [j/k]nav  [C-d/u]scroll  [d]detail  [tab]layout  [z]zoom  [/]search  [esc]list  [q]uit  1/1  100% 
+ [j/k]nav  [C-d/u]scroll  [D]detail  [tab]layout  [z]zoom  [/]search  [esc]list  [q]uit  1/1  100% 

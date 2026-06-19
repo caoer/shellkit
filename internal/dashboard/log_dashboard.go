@@ -488,6 +488,11 @@ func (m ldModel) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.buildDetail()
 			m.refreshListView()
 		}
+	case "D":
+		m.view = ldViewUnified
+		m.unifiedRightVP.GotoTop()
+		m.refreshUnifiedView()
+		return m, nil
 	case "tab":
 		m.layout = (m.layout + 1) % ldLayoutCount
 		m.cacheInvalidateAll()
@@ -600,7 +605,7 @@ func (m ldModel) viewDetail() string {
 	}
 	lag := m.lagIndicator()
 	b.WriteString(ldBar.Render(fmt.Sprintf(
-		" [j/k]scroll  [esc]back%s  [tab]layout  [z]zoom  [q]uit  %d/%d%s ",
+		" [j/k]scroll  [D]unified  [esc]back%s  [tab]layout  [z]zoom  [q]uit  %d/%d%s ",
 		nav, m.cursor+1, len(m.filtered), pos)) + zoom + lag)
 
 	return b.String()
