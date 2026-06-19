@@ -114,9 +114,7 @@ func GenerateSSHConfig(servers []inventory.Server, w io.Writer) {
 			if line := identityFileLine(s.Identity); line != "" {
 				fmt.Fprintln(w, line)
 			}
-			if s.IdentitiesOnly {
-				fmt.Fprintln(w, "  IdentitiesOnly yes")
-			}
+			fmt.Fprintln(w, "  IdentitiesOnly yes")
 			if s.ProxyJump != "" {
 				fmt.Fprintf(w, "  ProxyJump %s\n", s.ProxyJump)
 			}

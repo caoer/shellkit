@@ -44,13 +44,13 @@ func TestGenerateSSHConfig_ProxyJump(t *testing.T) {
 		t.Errorf("robot-router block missing IdentitiesOnly:\n%s", router)
 	}
 
-	// A plain host must not gain a ProxyJump or IdentitiesOnly line.
+	// A plain host must not gain a ProxyJump line, but must have IdentitiesOnly.
 	direct := hostBlock(out, "direct-host")
 	if strings.Contains(direct, "ProxyJump") {
 		t.Errorf("direct-host block should not contain ProxyJump:\n%s", direct)
 	}
-	if strings.Contains(direct, "IdentitiesOnly") {
-		t.Errorf("direct-host block should not contain IdentitiesOnly:\n%s", direct)
+	if !strings.Contains(direct, "IdentitiesOnly yes") {
+		t.Errorf("direct-host block missing IdentitiesOnly:\n%s", direct)
 	}
 }
 
