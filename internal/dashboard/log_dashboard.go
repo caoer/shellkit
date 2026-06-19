@@ -1088,6 +1088,20 @@ func (m ldModel) colWidths() (int, int) {
 	return left, right
 }
 
+// rightColWidth returns the effective right-column width, accounting for zoom.
+// When zoomed, the right column spans the full terminal minus a small margin.
+func (m ldModel) rightColWidth() int {
+	if m.zoomed {
+		w := m.width - 4
+		if w < 20 {
+			return 20
+		}
+		return w
+	}
+	_, rw := m.colWidths()
+	return rw
+}
+
 // ── Input column (shared between list + detail) ─────────────────────
 
 func renderInputLines(e *mcp.CallEntry, w int) []string {
@@ -1559,6 +1573,7 @@ func (m *ldModel) buildCell(id string) *renderedCell {
 	}
 
 	leftW, rightW := m.colWidths()
+	rightWEff := m.rightColWidth() // zoom-aware width for right column
 
 	// List view body lines.
 	cell.list = m.renderBody(e, leftW, rightW, maxEntryBodyLines)
@@ -1570,7 +1585,7 @@ func (m *ldModel) buildCell(id string) *renderedCell {
 	// Static calls defer right-column build to ensureCellRight().
 	if isActive && len(a.StepStatuses) > 0 {
 		steps := buildLiveWaterfall(a)
-		cell.right = renderWaterfall(steps, rightW, a.StartedAt, true)
+		cell.right = renderWaterfall(steps, rightWEff, a.StartedAt, true)
 		cell.hasRight = true
 	}
 
@@ -1599,7 +1614,7 @@ func (m *ldModel) ensureCellRight(id string) []string {
 		return nil
 	}
 
-	_, rightW := m.colWidths()
+	rightW := m.rightColWidth()
 	callStart, steps, err := loadStaticWaterfall(e.ID)
 	if err != nil || len(steps) == 0 {
 		cell.right = renderResultLines(e, rightW, 0, true)

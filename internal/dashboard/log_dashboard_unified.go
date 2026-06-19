@@ -575,13 +575,7 @@ func (m *ldModel) refreshUnifiedLeft() {
 }
 
 func (m *ldModel) refreshUnifiedRight() {
-	_, rightW := m.colWidths()
-	if m.zoomed {
-		rightW = m.width - 2
-		if rightW < 20 {
-			rightW = 20
-		}
-	}
+	rightW := m.rightColWidth()
 	vh := m.viewportHeight()
 	m.unifiedRightVP.Width = rightW
 	m.unifiedRightVP.Height = vh
