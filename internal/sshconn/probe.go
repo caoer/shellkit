@@ -169,6 +169,14 @@ func ProbeServer(s *inventory.Server, timeout time.Duration) ProbeResult {
 		allSigners[i] = named[i].Signer
 	}
 
+	// Record which key(s) were tried before dialing — on auth-fail we still
+	// want to know what was offered so the operator can diagnose mismatches.
+	if len(named) == 1 {
+		result.KeyUsed = named[0].label
+	} else {
+		result.KeyUsed = "(multi-key)"
+	}
+
 	config := &ssh.ClientConfig{
 		User:            s.DisplayUser(),
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(allSigners...)},
@@ -191,18 +199,6 @@ func ProbeServer(s *inventory.Server, timeout time.Duration) ProbeResult {
 		result.Latency = time.Since(rttStart)
 	}
 	client.Close()
-
-	// Identify which key was accepted. When only one key is available we
-	// already know the answer without an extra connection. For multiple keys
-	// we report "(multi-key)" instead of trying each key individually —
-	// the per-key loop generated N-1 FAILED auth attempts per probe, which
-	// triggers provider abuse detection (BandwagonHost "too many SSH
-	// attempts in 180s").
-	if len(named) == 1 {
-		result.KeyUsed = named[0].label
-	} else {
-		result.KeyUsed = "(multi-key)"
-	}
 
 	return result
 }
