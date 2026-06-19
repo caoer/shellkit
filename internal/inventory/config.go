@@ -230,39 +230,15 @@ func defaultIdentity() string {
 	return expandHome(DefaultIdentityRef())
 }
 
-func loadDefaultIdentityFiles() []string {
-	home, _ := os.UserHomeDir()
-	configPath := filepath.Join(home, ".ssh", "configs.generated.conf")
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return []string{defaultIdentity()}
-	}
-	var files []string
-	inHostStar := false
-	for _, line := range strings.Split(string(data), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "Host ") {
-			inHostStar = trimmed == "Host *"
-			continue
-		}
-		if inHostStar && strings.HasPrefix(trimmed, "IdentityFile ") {
-			path := strings.TrimPrefix(trimmed, "IdentityFile ")
-			files = append(files, expandHome(path))
-		}
-	}
-	if len(files) == 0 {
-		return []string{defaultIdentity()}
-	}
-	return files
-}
-
+// KeyPaths returns the SSH identity file paths for this server.
+// When the host declares an explicit identity, only that key is returned
+// (mirroring IdentitiesOnly yes in the generated SSH config). The default
+// fallback key is appended only when no explicit identity is set.
 func (s Server) KeyPaths() []string {
-	var paths []string
 	if s.Identity != "" {
-		paths = append(paths, ResolveIdentityPath(s.Identity))
+		return []string{ResolveIdentityPath(s.Identity)}
 	}
-	paths = append(paths, loadDefaultIdentityFiles()...)
-	return paths
+	return []string{defaultIdentity()}
 }
 
 func LoadInventory(path string) ([]Server, error) {

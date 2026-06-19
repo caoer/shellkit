@@ -150,13 +150,11 @@ func ProbeServer(s *inventory.Server, timeout time.Duration) ProbeResult {
 		named = append(named, namedSigner{signer, keyPaths[i]})
 	}
 
-	// Deduplicate: skip agent keys whose public key matches a file signer
-	filePubs := make(map[string]bool, len(fileSigners))
-	for _, signer := range fileSigners {
-		filePubs[string(signer.PublicKey().Marshal())] = true
-	}
-	for _, signer := range agentSigners() {
-		if !filePubs[string(signer.PublicKey().Marshal())] {
+	// Mirror IdentitiesOnly: when file keys are available, skip agent keys
+	// entirely. This prevents multi-key ambiguity and avoids triggering
+	// provider abuse detection from extra auth attempts.
+	if len(named) == 0 {
+		for _, signer := range agentSigners() {
 			named = append(named, namedSigner{signer, "(agent)"})
 		}
 	}
