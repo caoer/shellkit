@@ -32,7 +32,8 @@ type renderOpts struct {
 	frame     int  // -1 = final state; >=0 = state after applying frame events
 	frames    bool // emit one snapshot per event applied
 	stripAnsi bool
-	cursor    int // simulate cursor position (0-indexed)
+	cursor    int  // simulate cursor position (0-indexed)
+	zoom      bool // simulate z keypress (detail zoom)
 	out       io.Writer
 }
 
@@ -124,6 +125,10 @@ func renderMerged(ids []string, opts renderOpts) error {
 		mi, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
 		m = mi.(ldModel)
 	}
+	if opts.zoom {
+		mi, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'z'}})
+		m = mi.(ldModel)
+	}
 	emit(opts, m.View())
 	return nil
 }
@@ -171,6 +176,10 @@ func renderOne(callID string, opts renderOpts) error {
 			emit(opts, m.View())
 		}
 		if i == last && !opts.frames {
+			if opts.zoom {
+				mi, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'z'}})
+				m = mi.(ldModel)
+			}
 			emit(opts, m.View())
 		}
 	}
@@ -314,6 +323,8 @@ func RunRenderDashboard(args []string) error {
 			i++
 		case strings.HasPrefix(a, "--cursor="):
 			fmt.Sscanf(strings.TrimPrefix(a, "--cursor="), "%d", &opts.cursor)
+		case a == "--zoom":
+			opts.zoom = true
 		case strings.HasPrefix(a, "-"):
 			return fmt.Errorf("unknown flag: %s", a)
 		default:
