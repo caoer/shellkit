@@ -151,7 +151,8 @@ type ldModel struct {
 	layout ldLayout
 
 	// detail view — viewport replaces detailLines/detailScroll
-	detailVP viewport.Model
+	detailVP     viewport.Model
+	detailZoomed bool // z toggle: hide left column, full-width log
 
 	// search
 	filter    textinput.Model
@@ -491,6 +492,9 @@ func (m ldModel) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.layout = (m.layout + 1) % ldLayoutCount
 		m.cacheInvalidateAll()
 		m.buildDetail()
+	case "z":
+		m.detailZoomed = !m.detailZoomed
+		m.buildDetail()
 	}
 	return m, nil
 }
@@ -564,10 +568,14 @@ func (m ldModel) viewDetail() string {
 	dur := formatDuration(e.DurationMs)
 	sid := ui.TruncOrDash(e.SessionID, 12)
 
+	layoutTag := m.layout.String()
+	if m.detailZoomed {
+		layoutTag = "zoom"
+	}
 	fmt.Fprintf(&b, " %s  %s  %s  session:%s  dur:%s  id:%s  [%s]\n\n",
 		ldTitle.Render("detail"),
 		badge, ts, ldAccent.Render(sid), dur,
-		ldDim.Render(e.ID), ldDim.Render(m.layout.String()))
+		ldDim.Render(e.ID), ldDim.Render(layoutTag))
 
 	// scrollable body — viewport handles scroll window + padding
 	b.WriteString(m.detailVP.View())
@@ -586,10 +594,14 @@ func (m ldModel) viewDetail() string {
 	if m.cursor < len(m.filtered)-1 {
 		nav += " [l]next"
 	}
+	zoom := ""
+	if m.detailZoomed {
+		zoom = "  " + ldAccent.Render("[ZOOM]")
+	}
 	lag := m.lagIndicator()
 	b.WriteString(ldBar.Render(fmt.Sprintf(
-		" [j/k]scroll  [esc]back%s  [tab]layout  [q]uit  %d/%d%s ",
-		nav, m.cursor+1, len(m.filtered), pos)) + lag)
+		" [j/k]scroll  [esc]back%s  [tab]layout  [z]zoom  [q]uit  %d/%d%s ",
+		nav, m.cursor+1, len(m.filtered), pos)) + zoom + lag)
 
 	return b.String()
 }
@@ -792,33 +804,52 @@ func (m *ldModel) buildDetail() {
 	idx := m.filtered[m.cursor]
 	e := &m.merged[idx]
 
-	leftW, rightW := m.colWidths()
-	leftLines := renderInputLines(e, leftW)
-
-	var rightLines []string
-	if a, ok := m.active[e.ID]; ok {
-		rightLines = renderLiveLines(a, rightW)
+	if m.detailZoomed {
+		// Full-width: show only the right (log/result) column.
+		fullW := m.width - 4
+		if fullW < 20 {
+			fullW = 20
+		}
+		var rightLines []string
+		if a, ok := m.active[e.ID]; ok {
+			rightLines = renderLiveLines(a, fullW)
+		} else {
+			rightLines = renderResultLines(e, fullW, 0, true)
+		}
+		var lines []string
+		for _, r := range rightLines {
+			lines = append(lines, "  "+r)
+		}
+		m.detailVP.SetContent(strings.Join(lines, "\n"))
 	} else {
-		rightLines = renderResultLines(e, rightW, 0, true)
-	}
+		leftW, rightW := m.colWidths()
+		leftLines := renderInputLines(e, leftW)
 
-	rows := max(len(leftLines), len(rightLines))
-	sep := ldColSep.Render(" │ ")
-
-	var lines []string
-	for i := 0; i < rows; i++ {
-		l := ""
-		if i < len(leftLines) {
-			l = leftLines[i]
+		var rightLines []string
+		if a, ok := m.active[e.ID]; ok {
+			rightLines = renderLiveLines(a, rightW)
+		} else {
+			rightLines = renderResultLines(e, rightW, 0, true)
 		}
-		r := ""
-		if i < len(rightLines) {
-			r = rightLines[i]
-		}
-		lines = append(lines, "  "+ui.PadTo(l, leftW)+sep+ui.PadTo(r, rightW))
-	}
 
-	m.detailVP.SetContent(strings.Join(lines, "\n"))
+		rows := max(len(leftLines), len(rightLines))
+		sep := ldColSep.Render(" │ ")
+
+		var lines []string
+		for i := 0; i < rows; i++ {
+			l := ""
+			if i < len(leftLines) {
+				l = leftLines[i]
+			}
+			r := ""
+			if i < len(rightLines) {
+				r = rightLines[i]
+			}
+			lines = append(lines, "  "+ui.PadTo(l, leftW)+sep+ui.PadTo(r, rightW))
+		}
+
+		m.detailVP.SetContent(strings.Join(lines, "\n"))
+	}
 }
 
 // renderLiveCompact is the list-view (compact) variant of renderLiveLines —
