@@ -726,6 +726,18 @@ func (m ldModel) selectedBreadcrumb() string {
 		parts = append(parts, ldDim.Render(formatDuration(e.DurationMs)))
 	}
 
+	// JSON config lines from the DSL input (e.g. {"ssh": "host", "timeout": 30})
+	if jsonConf := extractJSONLines(e.Input); jsonConf != "" {
+		metaW := 0
+		for _, p := range parts {
+			metaW += ui.VisibleLen(p) + 2
+		}
+		confW := m.width - metaW - 6
+		if confW > 20 {
+			parts = append(parts, ldDSLConf.Render(ui.Truncate(jsonConf, confW)))
+		}
+	}
+
 	return strings.Join(parts, "  ")
 }
 
@@ -786,6 +798,7 @@ func (m ldModel) handleUnifiedKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.refreshUnifiedView()
 	case "z":
 		m.zoomed = !m.zoomed
+		m.cacheInvalidateAll() // right-column lines are width-dependent
 		m.refreshUnifiedView()
 	case "/":
 		m.filtering = true

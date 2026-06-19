@@ -572,14 +572,10 @@ func (m ldModel) viewDetail() string {
 	if m.zoomed {
 		layoutTag = "zoom"
 	}
-	fmt.Fprintf(&b, " %s  %s  %s  session:%s  dur:%s  id:%s  [%s]\n",
+	fmt.Fprintf(&b, " %s  %s  %s  session:%s  dur:%s  id:%s  [%s]\n\n",
 		ldTitle.Render("detail"),
 		badge, ts, ldAccent.Render(sid), dur,
 		ldDim.Render(e.ID), ldDim.Render(layoutTag))
-
-	// Input parameter preview — always visible, even in zoomed mode.
-	inputPreview := e.InputPreview(m.width - 12)
-	fmt.Fprintf(&b, " %s %s\n", ldDim.Render("input:"), ldDSLBody.Render(inputPreview))
 
 	// scrollable body — viewport handles scroll window + padding
 	b.WriteString(m.detailVP.View())
@@ -799,7 +795,7 @@ func extractBodies(input string) []string {
 
 func (m *ldModel) buildDetail() {
 	m.detailVP.Width = m.width
-	m.detailVP.Height = max(1, m.height-5)
+	m.detailVP.Height = max(1, m.height-4)
 
 	if len(m.filtered) == 0 {
 		m.detailVP.SetContent("")
@@ -1323,6 +1319,20 @@ func formatParamTags(params map[string]string) string {
 		return ""
 	}
 	return ldDim.Render(" " + strings.Join(tags, " "))
+}
+
+// extractJSONLines pulls JSON config lines from a raw DSL input string.
+// These are lines like {"ssh": "host", "timeout": 30}. Multiple JSON lines
+// are joined with "  " so the result fits a single breadcrumb line.
+func extractJSONLines(input string) string {
+	var jsons []string
+	for _, line := range strings.Split(input, "\n") {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "{") && strings.HasSuffix(t, "}") {
+			jsons = append(jsons, t)
+		}
+	}
+	return strings.Join(jsons, "  ")
 }
 
 func colorizeDSL(line string) string {
