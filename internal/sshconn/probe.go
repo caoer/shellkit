@@ -307,8 +307,17 @@ func ProbeExtraKeys(s *inventory.Server, keyPaths []string, timeout time.Duratio
 	addr := s.ConnectAddr()
 	agents := agentSigners()
 
+	// Skip keys that match the host's configured identity
+	configured := make(map[string]bool)
+	for _, cp := range s.KeyPaths() {
+		configured[cp] = true
+	}
+
 	var succeeded []string
 	for _, p := range keyPaths {
+		if configured[p] {
+			continue
+		}
 		signer := resolveKeyOrAgent(p, agents)
 		if signer == nil {
 			continue
