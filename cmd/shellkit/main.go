@@ -64,9 +64,13 @@ func findInventory() string {
 	return ""
 }
 
-// version is the shellkit build version, overridable at build time with
+// version is the shellkit build version, injected at build time via
 // -ldflags "-X main.version=<v>". Defaults to "dev" for plain source builds.
 var version = "dev"
+
+// gitCommit is the short git commit hash, injected at build time via
+// -ldflags "-X main.gitCommit=<hash>".
+var gitCommit = "unknown"
 
 func usage() {
 	fmt.Fprintf(os.Stderr, `shellkit — SSH server inventory & connectivity checker
@@ -115,7 +119,7 @@ func extractGlobalFlags(args []string) (inventoryPath string, jsonOutput bool, m
 		case a == "-h" || a == "--help" || a == "-help":
 			usage()
 		case a == "--version" || a == "-version" || a == "-v":
-			fmt.Println("shellkit " + version)
+			fmt.Println("shellkit " + version + " (" + gitCommit + ")")
 			os.Exit(0)
 		case a == "--json" || a == "-json":
 			jsonOutput = true
@@ -163,7 +167,7 @@ func main() {
 
 	// version needs no inventory — handle it before the inventory check.
 	if len(rest) > 0 && rest[0] == "version" {
-		fmt.Println("shellkit " + version)
+		fmt.Println("shellkit " + version + " (" + gitCommit + ")")
 		return
 	}
 
