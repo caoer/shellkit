@@ -741,20 +741,20 @@ func CLICheck(servers []inventory.Server, jsonOutput bool, extraKeyPaths []strin
 	fmt.Fprintln(os.Stderr)
 
 	if len(extraKeyPaths) > 0 {
-		// For auth-ok hosts, try each extra key individually
-		var authOKResults []int
+		// For reachable hosts (auth-ok or auth-fail), try each extra key
+		var reachable []int
 		for i, r := range results {
-			if r.Status == sshconn.StatusAuthOK {
-				authOKResults = append(authOKResults, i)
+			if r.Status == sshconn.StatusAuthOK || r.Status == sshconn.StatusAuthFail {
+				reachable = append(reachable, i)
 			}
 		}
-		if len(authOKResults) > 0 {
-			fmt.Fprintf(os.Stderr, "Probing %d extra keys on %d hosts...\n", len(extraKeyPaths), len(authOKResults))
+		if len(reachable) > 0 {
+			fmt.Fprintf(os.Stderr, "Probing %d extra keys on %d hosts...\n", len(extraKeyPaths), len(reachable))
 			var wg sync.WaitGroup
 			var mu sync.Mutex
 			sem := make(chan struct{}, 10)
 			done := 0
-			for _, idx := range authOKResults {
+			for _, idx := range reachable {
 				wg.Add(1)
 				go func(i int) {
 					defer wg.Done()
@@ -764,7 +764,7 @@ func CLICheck(servers []inventory.Server, jsonOutput bool, extraKeyPaths []strin
 					mu.Lock()
 					results[i].ExtraKeys = extra
 					done++
-					fmt.Fprintf(os.Stderr, "\r  %d/%d", done, len(authOKResults))
+					fmt.Fprintf(os.Stderr, "\r  %d/%d", done, len(reachable))
 					mu.Unlock()
 				}(idx)
 			}
