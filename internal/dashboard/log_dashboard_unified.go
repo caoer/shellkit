@@ -576,6 +576,12 @@ func (m *ldModel) refreshUnifiedLeft() {
 
 func (m *ldModel) refreshUnifiedRight() {
 	_, rightW := m.colWidths()
+	if m.zoomed {
+		rightW = m.width - 2
+		if rightW < 20 {
+			rightW = 20
+		}
+	}
 	vh := m.viewportHeight()
 	m.unifiedRightVP.Width = rightW
 	m.unifiedRightVP.Height = vh
@@ -609,9 +615,6 @@ func (m *ldModel) refreshUnifiedRight() {
 func (m ldModel) viewUnified() string {
 	var b strings.Builder
 	vh := m.viewportHeight()
-	_, rightW := m.colWidths()
-	sep := ldColSep.Render(" │ ")
-	cellTotalW := m.unifiedLeftVP.Width
 
 	// Title line
 	title := ldTitle.Render("shellkit logs")
@@ -619,7 +622,11 @@ func (m ldModel) viewUnified() string {
 	if q := m.filter.Value(); q != "" {
 		stats += "  " + ldAccent.Render(fmt.Sprintf("/%s (%d)", q, len(m.filtered)))
 	}
-	stats += "  " + ldDim.Render("[unified]")
+	tag := "unified"
+	if m.zoomed {
+		tag = "zoom"
+	}
+	stats += "  " + ldDim.Render("["+tag+"]")
 	fmt.Fprintf(&b, " %s%s\n", title, stats)
 
 	// Filter input row / breadcrumb
@@ -631,20 +638,36 @@ func (m ldModel) viewUnified() string {
 		b.WriteString("\n")
 	}
 
-	// Body — split viewport views and zip left/right columns
-	leftLines := strings.Split(m.unifiedLeftVP.View(), "\n")
-	rightLines := strings.Split(m.unifiedRightVP.View(), "\n")
-	for i := 0; i < vh; i++ {
-		l := ""
-		if i < len(leftLines) {
-			l = leftLines[i]
+	if m.zoomed {
+		// Zoomed: full-width right column only
+		rightLines := strings.Split(m.unifiedRightVP.View(), "\n")
+		for i := 0; i < vh; i++ {
+			r := ""
+			if i < len(rightLines) {
+				r = rightLines[i]
+			}
+			b.WriteString(ui.PadTo(r, m.width))
+			b.WriteString("\n")
 		}
-		r := ""
-		if i < len(rightLines) {
-			r = rightLines[i]
+	} else {
+		// Normal: left cell list + right waterfall
+		_, rightW := m.colWidths()
+		sep := ldColSep.Render(" │ ")
+		cellTotalW := m.unifiedLeftVP.Width
+		leftLines := strings.Split(m.unifiedLeftVP.View(), "\n")
+		rightLines := strings.Split(m.unifiedRightVP.View(), "\n")
+		for i := 0; i < vh; i++ {
+			l := ""
+			if i < len(leftLines) {
+				l = leftLines[i]
+			}
+			r := ""
+			if i < len(rightLines) {
+				r = rightLines[i]
+			}
+			b.WriteString(ui.PadTo(l, cellTotalW) + sep + ui.PadTo(r, rightW))
+			b.WriteString("\n")
 		}
-		b.WriteString(ui.PadTo(l, cellTotalW) + sep + ui.PadTo(r, rightW))
-		b.WriteString("\n")
 	}
 
 	// Status bar
@@ -657,10 +680,14 @@ func (m ldModel) viewUnified() string {
 	if len(m.filtered) > 0 {
 		cur = m.cursor + 1
 	}
+	zoom := ""
+	if m.zoomed {
+		zoom = "  " + ldAccent.Render("[ZOOM]")
+	}
 	lag := m.lagIndicator()
 	b.WriteString(ldBar.Render(fmt.Sprintf(
-		" [j/k]nav  [C-d/u]scroll  [tab]layout  [/]search  [esc]list  [q]uit  %d/%d%s ",
-		cur, len(m.filtered), pos)) + lag)
+		" [j/k]nav  [C-d/u]scroll  [tab]layout  [z]zoom  [/]search  [esc]list  [q]uit  %d/%d%s ",
+		cur, len(m.filtered), pos)) + zoom + lag)
 	return b.String()
 }
 
@@ -756,6 +783,9 @@ func (m ldModel) handleUnifiedKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "tab":
 		m.layout = (m.layout + 1) % ldLayoutCount
 		m.cacheInvalidateAll()
+		m.refreshUnifiedView()
+	case "z":
+		m.zoomed = !m.zoomed
 		m.refreshUnifiedView()
 	case "/":
 		m.filtering = true

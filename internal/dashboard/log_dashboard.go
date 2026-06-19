@@ -151,8 +151,8 @@ type ldModel struct {
 	layout ldLayout
 
 	// detail view — viewport replaces detailLines/detailScroll
-	detailVP     viewport.Model
-	detailZoomed bool // z toggle: hide left column, full-width log
+	detailVP viewport.Model
+	zoomed   bool // z toggle: hide left column, full-width right column
 
 	// search
 	filter    textinput.Model
@@ -493,7 +493,7 @@ func (m ldModel) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cacheInvalidateAll()
 		m.buildDetail()
 	case "z":
-		m.detailZoomed = !m.detailZoomed
+		m.zoomed = !m.zoomed
 		m.buildDetail()
 	}
 	return m, nil
@@ -569,7 +569,7 @@ func (m ldModel) viewDetail() string {
 	sid := ui.TruncOrDash(e.SessionID, 12)
 
 	layoutTag := m.layout.String()
-	if m.detailZoomed {
+	if m.zoomed {
 		layoutTag = "zoom"
 	}
 	fmt.Fprintf(&b, " %s  %s  %s  session:%s  dur:%s  id:%s  [%s]\n",
@@ -599,7 +599,7 @@ func (m ldModel) viewDetail() string {
 		nav += " [l]next"
 	}
 	zoom := ""
-	if m.detailZoomed {
+	if m.zoomed {
 		zoom = "  " + ldAccent.Render("[ZOOM]")
 	}
 	lag := m.lagIndicator()
@@ -808,7 +808,7 @@ func (m *ldModel) buildDetail() {
 	idx := m.filtered[m.cursor]
 	e := &m.merged[idx]
 
-	if m.detailZoomed {
+	if m.zoomed {
 		// Full-width: show only the right (log/result) column.
 		fullW := m.width - 4
 		if fullW < 20 {
