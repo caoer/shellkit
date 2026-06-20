@@ -374,6 +374,8 @@ func (e *eventEmitter) processLine(line string) {
 	}
 	if e.nonce != "" {
 		prefix := traceMarkerFor(e.nonce) + " "
+		bareMarker := traceMarkerFor(e.nonce)
+		// Full-line marker at start — pure trace, no user output.
 		if strings.HasPrefix(line, prefix) {
 			if elapsed, lineNo, cmd, ok := parseTraceLine(line[len(prefix):]); ok {
 				fields := map[string]any{
@@ -387,6 +389,43 @@ func (e *eventEmitter) processLine(line string) {
 					fields["line_no"] = lineNo
 				}
 				e.out.Emit("executing", fields)
+			}
+			return
+		}
+		// Mid-line marker: preceding command used echo -n (no trailing
+		// newline), so the trap output got appended to the same line.
+		// Emit the real output prefix, then the trace event.
+		if idx := strings.Index(line, prefix); idx > 0 {
+			e.out.Emit(e.stream, map[string]any{
+				"step": e.stepIdx,
+				"name": e.stepName,
+				"host": e.host,
+				"line": line[:idx],
+			})
+			if elapsed, lineNo, cmd, ok := parseTraceLine(line[idx+len(prefix):]); ok {
+				fields := map[string]any{
+					"step":        e.stepIdx,
+					"name":        e.stepName,
+					"host":        e.host,
+					"elapsed_sec": elapsed,
+					"cmd":         cmd,
+				}
+				if lineNo > 0 {
+					fields["line_no"] = lineNo
+				}
+				e.out.Emit("executing", fields)
+			}
+			return
+		}
+		// Bare marker without variables — strip entirely, keep prefix.
+		if idx := strings.Index(line, bareMarker); idx >= 0 {
+			if idx > 0 {
+				e.out.Emit(e.stream, map[string]any{
+					"step": e.stepIdx,
+					"name": e.stepName,
+					"host": e.host,
+					"line": line[:idx],
+				})
 			}
 			return
 		}

@@ -149,11 +149,30 @@ func parseTraceLine(rest string) (elapsed, lineNo int, cmd string, ok bool) {
 
 func extractTrace(stdout, nonce string) (cleanStdout string, trace []TraceLine) {
 	marker := traceMarkerFor(nonce) + " "
+	bareMarker := traceMarkerFor(nonce)
 	var clean []string
 	for _, line := range strings.Split(stdout, "\n") {
 		if strings.HasPrefix(line, marker) {
 			if elapsed, lineNo, cmd, ok := parseTraceLine(line[len(marker):]); ok {
 				trace = append(trace, TraceLine{ElapsedSec: elapsed, LineNo: lineNo, Command: cmd})
+			}
+			continue
+		}
+		// Mid-line marker: preceding command used echo -n (no trailing
+		// newline), so the trap output got appended to the same line.
+		if idx := strings.Index(line, marker); idx > 0 {
+			if elapsed, lineNo, cmd, ok := parseTraceLine(line[idx+len(marker):]); ok {
+				trace = append(trace, TraceLine{ElapsedSec: elapsed, LineNo: lineNo, Command: cmd})
+			}
+			if prefix := line[:idx]; prefix != "" {
+				clean = append(clean, prefix)
+			}
+			continue
+		}
+		// Bare marker without variables (e.g. empty $SECONDS expansion).
+		if idx := strings.Index(line, bareMarker); idx >= 0 {
+			if prefix := line[:idx]; prefix != "" {
+				clean = append(clean, prefix)
 			}
 			continue
 		}

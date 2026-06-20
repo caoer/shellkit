@@ -660,6 +660,31 @@ func TestExtractTrace(t *testing.T) {
 	}
 }
 
+func TestExtractTrace_MidLine(t *testing.T) {
+	nonce := "d15931543a0fd4ab"
+	marker := traceMarkerFor(nonce)
+
+	// Simulate echo -n "TCP: " followed by trap output on the same line,
+	// then curl result concatenated with next trap output (no trailing newline).
+	raw := fmt.Sprintf("%s 0 5 echo -n \"TCP: \"\nTCP: %s 2 40 curl http://example.com\n1.2.3.4%s 2 41 echo \"\"\n\n",
+		marker, marker, marker)
+
+	clean, trace := extractTrace(raw, nonce)
+
+	if len(trace) != 3 {
+		t.Fatalf("want 3 trace entries, got %d", len(trace))
+	}
+	if strings.Contains(clean, marker) {
+		t.Errorf("clean stdout should not contain trace marker, got:\n%s", clean)
+	}
+	if !strings.Contains(clean, "TCP: ") {
+		t.Error("clean stdout should preserve 'TCP: ' prefix from echo -n")
+	}
+	if !strings.Contains(clean, "1.2.3.4") {
+		t.Error("clean stdout should preserve '1.2.3.4' prefix from curl output")
+	}
+}
+
 func TestExtractTrace_Empty(t *testing.T) {
 	clean, trace := extractTrace("just stdout\nno markers", "nonce123")
 	if len(trace) != 0 {
