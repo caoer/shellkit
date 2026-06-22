@@ -733,25 +733,60 @@ func CLIList(servers []inventory.Server, jsonOutput bool) {
 }
 
 func CLICheck(servers []inventory.Server, jsonOutput bool, extraKeyPaths []string, disableDefaultKey bool, disablePassword bool) {
+	const probeTimeout = 10 * time.Second
+
+	hasExtraKeys := len(extraKeyPaths) > 0
+
+	// Print header before any probing so output streams immediately.
+	if !jsonOutput {
+		fmt.Printf("%-14s %-20s %-17s %-8s %8s  %s\n",
+			"PROVIDER", "NAME", "IP", "STATUS", "LATENCY", "KEY")
+		fmt.Println(strings.Repeat("-", 95))
+	}
+
 	fmt.Fprintf(os.Stderr, "Probing %d servers...\n", len(servers))
 	opts := sshconn.ProbeOptions{DisableDefaultKey: disableDefaultKey, DisablePassword: disablePassword}
-	results := sshconn.ProbeAll(servers, 20, 5*time.Second, opts, func(r sshconn.ProbeResult, done, total int) {
+
+	// Collect reachable indices for extra-key phase; guarded by mu.
+	var reachable []int
+	var results []sshconn.ProbeResult
+	var mu sync.Mutex
+
+	results = sshconn.ProbeAll(servers, 20, probeTimeout, opts, func(r sshconn.ProbeResult, done, total int) {
 		fmt.Fprintf(os.Stderr, "\r  %d/%d", done, total)
+
+		if !hasExtraKeys {
+			// No extra-key phase — print every result as it lands.
+			if jsonOutput {
+				printCheckJSONLine(r)
+			} else {
+				printCheckLine(r)
+			}
+		} else {
+			// Extra-key mode: print non-reachable hosts now; defer reachable.
+			if r.Status == sshconn.StatusAuthOK || r.Status == sshconn.StatusAuthFail {
+				// Will be printed after extra-key probe.
+			} else {
+				if jsonOutput {
+					printCheckJSONLine(r)
+				} else {
+					printCheckLine(r)
+				}
+			}
+		}
 	})
 	fmt.Fprintln(os.Stderr)
 
-	if len(extraKeyPaths) > 0 {
-		// For reachable hosts (auth-ok or auth-fail), try each extra key
-		var reachable []int
+	if hasExtraKeys {
 		for i, r := range results {
 			if r.Status == sshconn.StatusAuthOK || r.Status == sshconn.StatusAuthFail {
 				reachable = append(reachable, i)
 			}
 		}
+
 		if len(reachable) > 0 {
 			fmt.Fprintf(os.Stderr, "Probing %d extra keys on %d hosts...\n", len(extraKeyPaths), len(reachable))
 			var wg sync.WaitGroup
-			var mu sync.Mutex
 			sem := make(chan struct{}, 10)
 			done := 0
 			for _, idx := range reachable {
@@ -760,11 +795,17 @@ func CLICheck(servers []inventory.Server, jsonOutput bool, extraKeyPaths []strin
 					defer wg.Done()
 					sem <- struct{}{}
 					defer func() { <-sem }()
-					extra := sshconn.ProbeExtraKeys(results[i].Server, extraKeyPaths, 5*time.Second)
+					extra := sshconn.ProbeExtraKeys(results[i].Server, extraKeyPaths, probeTimeout)
 					mu.Lock()
 					results[i].ExtraKeys = extra
 					done++
 					fmt.Fprintf(os.Stderr, "\r  %d/%d", done, len(reachable))
+					// Print this host's result as soon as it's done.
+					if jsonOutput {
+						printCheckJSONLine(results[i])
+					} else {
+						printCheckLine(results[i])
+					}
 					mu.Unlock()
 				}(idx)
 			}
@@ -774,36 +815,7 @@ func CLICheck(servers []inventory.Server, jsonOutput bool, extraKeyPaths []strin
 	}
 
 	if jsonOutput {
-		printCheckJSON(results)
 		return
-	}
-
-	sort.Slice(results, func(i, j int) bool {
-		if results[i].Server.Provider != results[j].Server.Provider {
-			return results[i].Server.Provider < results[j].Server.Provider
-		}
-		return results[i].Server.Name < results[j].Server.Name
-	})
-
-	fmt.Printf("%-14s %-20s %-17s %-8s %8s  %s\n",
-		"PROVIDER", "NAME", "IP", "STATUS", "LATENCY", "KEY")
-	fmt.Println(strings.Repeat("-", 95))
-	for _, r := range results {
-		key := ""
-		if r.KeyUsed != "" {
-			key = shortPath(r.KeyUsed)
-		}
-		extra := ""
-		if len(r.ExtraKeys) > 0 {
-			short := make([]string, len(r.ExtraKeys))
-			for i, k := range r.ExtraKeys {
-				short[i] = shortPath(k)
-			}
-			extra = "  [works: " + strings.Join(short, ", ") + "]"
-		}
-		fmt.Printf("%-14s %-20s %-17s %-8s %8s  %s%s\n",
-			r.Server.Provider, r.Server.Name, r.Server.IP,
-			r.Status.String(), sshconn.FormatLatency(r.Latency), key, extra)
 	}
 
 	var online, authOK, down int
@@ -884,6 +896,37 @@ func printJSON(servers []inventory.Server) {
 		})
 	}
 	writeJSON(out)
+}
+
+func printCheckLine(r sshconn.ProbeResult) {
+	key := ""
+	if r.KeyUsed != "" {
+		key = shortPath(r.KeyUsed)
+	}
+	extra := ""
+	if len(r.ExtraKeys) > 0 {
+		short := make([]string, len(r.ExtraKeys))
+		for i, k := range r.ExtraKeys {
+			short[i] = shortPath(k)
+		}
+		extra = "  [works: " + strings.Join(short, ", ") + "]"
+	}
+	fmt.Printf("%-14s %-20s %-17s %-8s %8s  %s%s\n",
+		r.Server.Provider, r.Server.Name, r.Server.IP,
+		r.Status.String(), sshconn.FormatLatency(r.Latency), key, extra)
+}
+
+func printCheckJSONLine(r sshconn.ProbeResult) {
+	entry := checkEntryJSON{
+		Provider:  r.Server.Provider,
+		Name:      r.Server.Name,
+		IP:        r.Server.IP,
+		Status:    r.Status.String(),
+		LatencyMs: r.Latency.Milliseconds(),
+		Key:       r.KeyUsed,
+		ExtraKeys: r.ExtraKeys,
+	}
+	writeJSON(entry)
 }
 
 func printCheckJSON(results []sshconn.ProbeResult) {
