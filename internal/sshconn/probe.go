@@ -126,6 +126,28 @@ func agentSigners() []ssh.Signer {
 	return signers
 }
 
+// sshDialWithDeadline dials TCP, sets a hard deadline covering the entire
+// SSH handshake + auth (not just the TCP connect), then returns an
+// *ssh.Client. This prevents hangs when a server accepts TCP but stalls
+// the handshake or auth exchange.
+func sshDialWithDeadline(addr string, config *ssh.ClientConfig, timeout time.Duration) (*ssh.Client, error) {
+	conn, err := net.DialTimeout("tcp", addr, timeout)
+	if err != nil {
+		return nil, err
+	}
+	// Hard deadline: if handshake + auth aren't done in time, the
+	// connection is forcibly closed.
+	conn.SetDeadline(time.Now().Add(timeout))
+	c, chans, reqs, err := ssh.NewClientConn(conn, addr, config)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	// Clear deadline for normal operation after successful auth.
+	conn.SetDeadline(time.Time{})
+	return ssh.NewClient(c, chans, reqs), nil
+}
+
 type namedSigner struct {
 	ssh.Signer
 	label string
@@ -242,10 +264,9 @@ func ProbeServer(s *inventory.Server, timeout time.Duration, opts ...ProbeOption
 		User:            s.DisplayUser(),
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(allSigners...)},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         timeout,
 	}
 
-	client, err := ssh.Dial("tcp", addr, config)
+	client, err := sshDialWithDeadline(addr, config, timeout)
 	if err != nil {
 		result.Status = StatusAuthFail
 		result.Error = err.Error()
@@ -278,10 +299,9 @@ func probePassword(s *inventory.Server, addr string, result ProbeResult, timeout
 		User:            s.DisplayUser(),
 		Auth:            []ssh.AuthMethod{ssh.Password(pw)},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         timeout,
 	}
 
-	client, err := ssh.Dial("tcp", addr, config)
+	client, err := sshDialWithDeadline(addr, config, timeout)
 	if err != nil {
 		result.Status = StatusAuthFail
 		result.Error = err.Error()
@@ -326,9 +346,8 @@ func ProbeExtraKeys(s *inventory.Server, keyPaths []string, timeout time.Duratio
 			User:            s.DisplayUser(),
 			Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
 			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-			Timeout:         timeout,
 		}
-		client, err := ssh.Dial("tcp", addr, config)
+		client, err := sshDialWithDeadline(addr, config, timeout)
 		if err != nil {
 			continue
 		}
