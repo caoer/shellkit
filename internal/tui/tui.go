@@ -734,6 +734,7 @@ func CLIList(servers []inventory.Server, jsonOutput bool) {
 
 func CLICheck(servers []inventory.Server, jsonOutput bool, extraKeyPaths []string, disableDefaultKey bool, disablePassword bool) {
 	const probeTimeout = 10 * time.Second
+	const extraKeyTimeout = 3 * time.Second // host already confirmed reachable
 
 	hasExtraKeys := len(extraKeyPaths) > 0
 
@@ -787,7 +788,7 @@ func CLICheck(servers []inventory.Server, jsonOutput bool, extraKeyPaths []strin
 		if len(reachable) > 0 {
 			fmt.Fprintf(os.Stderr, "Probing %d extra keys on %d hosts...\n", len(extraKeyPaths), len(reachable))
 			var wg sync.WaitGroup
-			sem := make(chan struct{}, 10)
+			sem := make(chan struct{}, 20)
 			done := 0
 			for _, idx := range reachable {
 				wg.Add(1)
@@ -795,7 +796,7 @@ func CLICheck(servers []inventory.Server, jsonOutput bool, extraKeyPaths []strin
 					defer wg.Done()
 					sem <- struct{}{}
 					defer func() { <-sem }()
-					extra := sshconn.ProbeExtraKeys(results[i].Server, extraKeyPaths, probeTimeout)
+					extra := sshconn.ProbeExtraKeys(results[i].Server, extraKeyPaths, extraKeyTimeout)
 					mu.Lock()
 					results[i].ExtraKeys = extra
 					done++
