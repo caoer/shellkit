@@ -29,6 +29,7 @@ Steps run **sequentially**, top to bottom. Each step's output is captured and ad
 | `{"ssh": ["h1","h2"]}` + body | Fan out — same body on every host, in parallel |
 | `{"ssh": "user@host:port"}` + body | Run on a raw SSH target (no inventory/ssh_config entry needed) |
 | `{"ssh": "host", "jump": "proxy"}` + body | Hop through a jump host (ProxyJump) — works with any host type and fan-out |
+| `{"ssh": "host", "identity": "~/.ssh/key"}` + body | Use a specific SSH key — sets IdentitiesOnly; works with any host type, fan-out, and tmux |
 | body only, no config | Run **locally** (post-process output, scp/rsync, compare results) |
 | `{"list": true}` | List inventory hosts (`"filter": "k=v"` to narrow) |
 | `{"tmux": "host:session"}` + body | Drive an interactive remote tmux session — see `references/tmux-runtime.md` |
@@ -122,6 +123,16 @@ uname -a && df -h /
 ```
 
 The `"jump"` field works with any host type — inventory names, raw `user@host:port` targets, or ssh_config aliases. It also works with fan-out (all targets hop through the same proxy) and tmux steps. The proxy authenticates via your ssh_config / ssh-agent; the target uses its own auth (key or password).
+
+**Use a specific SSH key (identity):**
+```
+### connect
+{"ssh": "admin@192.168.80.1:2213", "identity": "~/.ssh/mac_m4_ed25519"}
+
+uname -a
+```
+
+The `"identity"` field overrides the server's key and sets `IdentitiesOnly`, so ssh uses only that key. Works with any host type, fan-out, and tmux steps. Paths with `~/` expand to `$HOME`; bare names (no `/`) resolve to `~/.ssh/keys/<name>` (inventory convention).
 
 Multi-step conditional chaining, cross-host coordination (start service on A, benchmark from B, clean up on A), and non-bash `$OUTPUT` examples are in `references/advanced-pipelines.md`.
 
