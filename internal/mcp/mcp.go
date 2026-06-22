@@ -51,6 +51,7 @@ CONFIG FIELDS:
   trace              bash only, on by default — command trace shown on timeout
   continue_on_error  proceed to the next step even if this one fails
   jump               SSH ProxyJump host — hop through a bastion to reach the target
+  identity           SSH identity file (key) path — e.g. ~/.ssh/my_key
 
 OUTPUT & CHAINING (GitHub-Actions style):
   echo "key=value" >> $OUTPUT          export a value from a step

@@ -303,6 +303,12 @@ func (e *Executor) executeSSH(ctx context.Context, stepIdx int, step *Step) ([]S
 		if step.Config.Jump != "" {
 			srv.ProxyJump = step.Config.Jump
 		}
+		// DSL "identity" overrides the server's identity file, letting
+		// agents specify a key without an inventory or ssh_config entry.
+		if step.Config.Identity != "" {
+			srv.Identity = step.Config.Identity
+			srv.IdentitiesOnly = true
+		}
 
 		body, err := e.store.Resolve(step.Body)
 		if err != nil {
@@ -824,6 +830,10 @@ func (e *Executor) executeTmux(ctx context.Context, stepIdx int, step *Step) ([]
 		}
 		if step.Config.Jump != "" {
 			srv.ProxyJump = step.Config.Jump
+		}
+		if step.Config.Identity != "" {
+			srv.Identity = step.Config.Identity
+			srv.IdentitiesOnly = true
 		}
 
 		nonce := execNonce()

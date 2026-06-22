@@ -16,7 +16,8 @@ type StepConfig struct {
 	Trace           *bool           `json:"trace,omitempty"`
 	ContinueOnError bool            `json:"continue_on_error,omitempty"`
 	TmuxRaw         json.RawMessage `json:"tmux,omitempty"`
-	Jump            string          `json:"jump,omitempty"` // SSH ProxyJump — hop through this host to reach the target
+	Jump            string          `json:"jump,omitempty"`     // SSH ProxyJump — hop through this host to reach the target
+	Identity        string          `json:"identity,omitempty"` // SSH identity file (key) — path like ~/.ssh/my_key
 }
 
 type StepAction int
