@@ -302,6 +302,8 @@ func (m ldModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ldLiveDoneMsg:
 		// Watcher exited — stop pumping but stay alive on tick refresh.
 		return m, nil
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
 	case tea.KeyMsg:
 		switch m.view {
 		case ldViewList:
@@ -310,6 +312,45 @@ func (m ldModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleDetailKey(msg)
 		case ldViewUnified:
 			return m.handleUnifiedKey(msg)
+		}
+	}
+	return m, nil
+}
+
+// handleMouse dispatches scroll-wheel events to the appropriate viewport.
+func (m ldModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if msg.Button != tea.MouseButtonWheelUp && msg.Button != tea.MouseButtonWheelDown {
+		return m, nil
+	}
+	const scrollLines = 3
+	switch m.view {
+	case ldViewList:
+		if msg.Button == tea.MouseButtonWheelUp {
+			m.listVP.ScrollUp(scrollLines)
+		} else {
+			m.listVP.ScrollDown(scrollLines)
+		}
+	case ldViewDetail:
+		if msg.Button == tea.MouseButtonWheelUp {
+			m.detailVP.ScrollUp(scrollLines)
+		} else {
+			m.detailVP.ScrollDown(scrollLines)
+		}
+	case ldViewUnified:
+		// In non-zoomed mode, scroll left column when mouse is over it.
+		leftW, _ := m.colWidths()
+		if !m.zoomed && msg.X <= leftW {
+			if msg.Button == tea.MouseButtonWheelUp {
+				m.unifiedLeftVP.ScrollUp(scrollLines)
+			} else {
+				m.unifiedLeftVP.ScrollDown(scrollLines)
+			}
+		} else {
+			if msg.Button == tea.MouseButtonWheelUp {
+				m.unifiedRightVP.ScrollUp(scrollLines)
+			} else {
+				m.unifiedRightVP.ScrollDown(scrollLines)
+			}
 		}
 	}
 	return m, nil
@@ -1946,7 +1987,7 @@ drainLoop:
 	// WithFPS(30) caps View() calls to 30Hz — bounds string assembly + ANSI cost.
 	// Does NOT throttle Update() calls or message processing.
 	// Combined with view cache: Update path is cheap, so unbounded Update rate is OK.
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithFPS(30))
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithFPS(30))
 	_, err = p.Run()
 	return err
 }
