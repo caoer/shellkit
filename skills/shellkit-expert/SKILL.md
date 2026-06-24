@@ -1,6 +1,6 @@
 ---
 name: shellkit-expert
-description: "Author and debug shellkit MCP `ssh` calls — the one-tool DSL that runs commands on remote hosts. Use for running scripts on a server, fan-out across hosts, file transfer (scp/rsync), capturing and chaining step output, raw or Daytona SSH targets, choosing which address (--addr) a host resolves on, timeout or 'unknown host' errors, or an interactive remote tmux session. The tool's own description is heavy and truncated in the tool list — load this for the full reference."
+description: "Author and debug shellkit MCP `ssh` calls — the one-tool DSL that runs commands on remote hosts. Use for running scripts on a server, fan-out across hosts, file transfer (scp/rsync), capturing and chaining step output, raw or Daytona SSH targets, choosing which address (--addr) a host resolves on, timeout or 'unknown host' errors, or an interactive remote tmux session. The tool's own description is heavy and truncated in the tool list — load this for the full reference. Also covers: SSH key/identity selection, ProxyJump through a bastion, password auth via inventory password_ref, and targeting hosts by name or IP."
 ---
 
 # shellkit-expert
@@ -133,6 +133,12 @@ uname -a
 ```
 
 The `"identity"` field overrides the server's key and sets `IdentitiesOnly`, so ssh uses only that key. Works with any host type, fan-out, and tmux steps. Paths with `~/` expand to `$HOME`; bare names (no `/`) resolve to `~/.ssh/keys/<name>` (inventory convention).
+
+**Password auth (inventory hosts with `password_ref`):**
+
+Inventory hosts can carry a `password_ref` field (e.g. `password_ref = "sops:secrets.yaml#path/to/key"`) — the daemon decrypts it via SOPS at connection time and feeds it to `sshpass`. No DSL config needed; password auth is automatic for hosts that have it.
+
+Key-first resolution: hosts with **both** a deployed key and a `password_ref` get a publickey probe first. If the key works, password is skipped entirely — a stray `password_ref` on a key-auth host never blocks the key. Password is the fallback, not the default.
 
 Multi-step conditional chaining, cross-host coordination (start service on A, benchmark from B, clean up on A), and non-bash `$OUTPUT` examples are in `references/advanced-pipelines.md`.
 
