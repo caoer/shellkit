@@ -53,6 +53,11 @@ CONFIG FIELDS:
   jump               SSH ProxyJump host — hop through a bastion to reach the target
   identity           SSH identity file (key) path — e.g. ~/.ssh/my_key
 
+AUTH: key (ssh-agent / ssh_config / "identity" field) or password (automatic
+  for inventory hosts with stored credentials). Both work with jump and fan-out.
+TARGET: "ssh" accepts an inventory name, raw user@IP[:port], user@hostname[:port],
+  or an ~/.ssh/config alias — use whichever you have.
+
 OUTPUT & CHAINING (GitHub-Actions style):
   echo "key=value" >> $OUTPUT          export a value from a step
   {{step.outputs.key}}                 read it in a later step

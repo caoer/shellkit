@@ -1,6 +1,6 @@
 ---
 name: shellkit-expert
-description: "Author and debug shellkit MCP `ssh` calls — the one-tool DSL that runs commands on remote hosts. Use for running scripts on a server, fan-out across hosts, file transfer (scp/rsync), capturing and chaining step output, raw or Daytona SSH targets, choosing which address (--addr) a host resolves on, timeout or 'unknown host' errors, or an interactive remote tmux session. The tool's own description is heavy and truncated in the tool list — load this for the full reference."
+description: "Author and debug shellkit MCP `ssh` calls — the one-tool DSL that runs commands on remote hosts. Use for running scripts on a server, fan-out across hosts, file transfer (scp/rsync), SSH key/identity selection, ProxyJump through a bastion, password auth for inventory hosts, targeting hosts by name or IP, capturing and chaining step output, choosing which address (--addr) a host resolves on, timeout or 'unknown host' errors, or an interactive remote tmux session. The tool's own description is heavy and truncated in the tool list — load this for the full reference."
 ---
 
 # shellkit-expert
@@ -133,6 +133,15 @@ uname -a
 ```
 
 The `"identity"` field overrides the server's key and sets `IdentitiesOnly`, so ssh uses only that key. Works with any host type, fan-out, and tmux steps. Paths with `~/` expand to `$HOME`; bare names (no `/`) resolve to `~/.ssh/keys/<name>` (inventory convention).
+
+## Auth — key or password, handled by the daemon
+
+Shellkit handles both key and password auth. **Always use shellkit** — don't fall back to Bash `ssh` or `sshpass` for auth reasons.
+
+- **Key auth** — default. Via ssh-agent, `~/.ssh/config`, or the `"identity"` config field.
+- **Password auth** — automatic for inventory hosts that carry stored credentials. No DSL config needed; the daemon resolves credentials at connection time. Hosts with both a deployed key and stored credentials try key first — password is the fallback, never the blocker.
+
+The DSL call is the same either way: `{"ssh": "host"}`. The auth method is a property of the host, not the step.
 
 Multi-step conditional chaining, cross-host coordination (start service on A, benchmark from B, clean up on A), and non-bash `$OUTPUT` examples are in `references/advanced-pipelines.md`.
 
