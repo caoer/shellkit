@@ -155,13 +155,12 @@ func sshPasswordInvocation(srv *inventory.Server, remoteCmd ...string) (name str
 }
 
 // sshInvocation returns the executable, args, and extra env to run ssh against
-// srv. For password_ref hosts it returns an sshpass invocation carrying the
-// decrypted password in SSHPASS; otherwise a plain ssh invocation. remoteCmd is
-// appended after the ssh target (empty for an interactive shell). Callers that
-// can probe (non-interactive exec) should prefer resolveInvocation, which tries
-// key auth before falling back to the password.
+// srv. Password-only hosts (password_ref without an explicit identity) get an
+// sshpass invocation; hosts with both identity and password_ref use plain ssh
+// (interactive ssh will try the key first, then prompt for password naturally).
+// remoteCmd is appended after the ssh target (empty for an interactive shell).
 func sshInvocation(srv *inventory.Server, remoteCmd ...string) (name string, args []string, env []string, err error) {
-	if srv.HasPassword() {
+	if srv.HasPassword() && srv.Identity == "" {
 		return sshPasswordInvocation(srv, remoteCmd...)
 	}
 	base := SSHArgs(srv, addrPref)

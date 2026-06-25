@@ -190,16 +190,22 @@ func ProbeServer(s *inventory.Server, timeout time.Duration, opts ...ProbeOption
 	result.Latency = time.Since(start)
 	conn.Close()
 
-	// Password hosts authenticate by password only — mirror the exec path
-	// (which forces PubkeyAuthentication=no) so probe validates exactly what a
-	// real connection will do. Offering keys here would let a stray key report
-	// auth-ok while password-only exec fails.
+	// Dual-auth: hosts with both identity and password_ref try key auth first,
+	// falling back to password if the key fails. Password-only hosts (no
+	// explicit identity) go straight to password auth.
 	if s.HasPassword() {
 		if opt.DisablePassword {
 			result.Status = StatusAuthFail
 			result.KeyUsed = "(password)"
 			result.Error = "password auth disabled"
 			return result
+		}
+		if s.Identity != "" {
+			// Try key auth first; fall through to password on failure.
+			keyResult := probeKey(s, addr, result, timeout)
+			if keyResult.Status == StatusAuthOK {
+				return keyResult
+			}
 		}
 		return probePassword(s, addr, result, timeout)
 	}
@@ -282,6 +288,69 @@ func ProbeServer(s *inventory.Server, timeout time.Duration, opts ...ProbeOption
 	}
 	client.Close()
 
+	return result
+}
+
+// probeKey attempts publickey auth for a host that also carries a password_ref.
+// Returns auth-ok when the key works; on failure the caller falls back to
+// password auth.
+func probeKey(s *inventory.Server, addr string, result ProbeResult, timeout time.Duration) ProbeResult {
+	keyPaths := s.KeyPaths()
+	fileSigners := loadSigners(keyPaths)
+
+	var named []namedSigner
+	for i, signer := range fileSigners {
+		named = append(named, namedSigner{signer, keyPaths[i]})
+	}
+	if len(named) == 0 {
+		agents := agentSigners()
+		if pub := loadPublicKey(keyPaths); pub != nil {
+			pubBytes := pub.Marshal()
+			for _, signer := range agents {
+				if string(signer.PublicKey().Marshal()) == string(pubBytes) {
+					named = append(named, namedSigner{signer, keyPaths[0]})
+					break
+				}
+			}
+		}
+		if len(named) == 0 {
+			for _, signer := range agents {
+				named = append(named, namedSigner{signer, "(agent)"})
+			}
+		}
+	}
+	if len(named) == 0 {
+		result.Status = StatusAuthFail
+		return result
+	}
+
+	allSigners := make([]ssh.Signer, len(named))
+	for i := range named {
+		allSigners[i] = named[i].Signer
+	}
+	if len(named) == 1 {
+		result.KeyUsed = named[0].label
+	} else {
+		result.KeyUsed = "(multi-key)"
+	}
+
+	config := &ssh.ClientConfig{
+		User:            s.DisplayUser(),
+		Auth:            []ssh.AuthMethod{ssh.PublicKeys(allSigners...)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	}
+	client, err := sshDialWithDeadline(addr, config, timeout)
+	if err != nil {
+		result.Status = StatusAuthFail
+		result.Error = err.Error()
+		return result
+	}
+	result.Status = StatusAuthOK
+	rttStart := time.Now()
+	if _, _, err := client.SendRequest("keepalive@openssh.com", true, nil); err == nil {
+		result.Latency = time.Since(rttStart)
+	}
+	client.Close()
 	return result
 }
 
