@@ -347,30 +347,37 @@ func (e *Executor) executeSSH(ctx context.Context, stepIdx int, step *Step) ([]S
 		}
 
 		// U6b per-host routing: the runner path is selected iff the step opted in
-		// (runnerOptIn), the entrypoint is bash (interp.Preflight parses bash), the
-		// preflight verdict is interp, and bootstrap yields a usable runner. Any
-		// other outcome runs the legacy path — verbatim today's behavior — carrying
-		// a RouteNote only when the runner was opted into and fell back (U0 §2/§5).
+		// (runnerOptIn), the preflight verdict is interp (bash bodies only —
+		// non-bash entrypoints skip preflight and ride the runner as supervised
+		// subprocesses with whole-step timing, hard constraint #4), and bootstrap
+		// yields a usable runner. Any other outcome runs the legacy path —
+		// verbatim today's behavior — carrying a RouteNote only when the runner
+		// was opted into and fell back (U0 §2/§5).
 		var routeNote string
-		if entrypoint == "bash" && runnerOptIn(step.Config) {
-			verdict, perr := interp.Preflight([]byte(body))
-			if perr != nil {
-				// Unrecoverable syntax error: refuse BEFORE connecting, surfacing
-				// the positioned teaching error (interp.PreflightError) instead of a
-				// remote shell error. Aborts the whole step — an invalid body must
-				// not run on any host.
-				return nil, fmt.Errorf("step %q: %w", step.Name, perr)
+		if runnerOptIn(step.Config) {
+			runnerRoute := true
+			if entrypoint == "bash" {
+				verdict, perr := interp.Preflight([]byte(body))
+				if perr != nil {
+					// Unrecoverable syntax error: refuse BEFORE connecting, surfacing
+					// the positioned teaching error (interp.PreflightError) instead of a
+					// remote shell error. Aborts the whole step — an invalid body must
+					// not run on any host.
+					return nil, fmt.Errorf("step %q: %w", step.Name, perr)
+				}
+				if verdict.Route != interp.RouteInterp {
+					// Static gap auto-route (U0 §5.1): interp can't faithfully run this
+					// construct — legacy path, with the router's reason as the note.
+					routeNote = verdict.Reason
+					runnerRoute = false
+				}
 			}
-			if verdict.Route != interp.RouteInterp {
-				// Static gap auto-route (U0 §5.1): interp can't faithfully run this
-				// construct — legacy path, with the router's reason as the note.
-				routeNote = verdict.Reason
-			} else {
+			if runnerRoute {
 				boot := e.bootstrapper.Bootstrap(ctx, srv)
 				if boot.Fallback {
 					// Bootstrap fallback (U0 §5.3): no usable runner on this host.
 					routeNote = boot.Reason
-				} else if result, ranBody := e.runRunnerSSH(ctx, srv, body, boot.RunnerPath, stepIdx, step, host, timeout); ranBody {
+				} else if result, ranBody := e.runRunnerSSH(ctx, srv, body, boot.RunnerPath, stepIdx, step, host, entrypoint, timeout); ranBody {
 					// Runner path is authoritative — including a wire-cut/protocol
 					// exit -1, which is NOT retried under legacy (the body may have
 					// executed, and the script may not be idempotent).
@@ -540,7 +547,7 @@ func (e *Executor) writeStepOutput(result *StepResult, stepName, host string, fa
 // carries just the RouteNote. Otherwise ranBody is true and the result is
 // authoritative, INCLUDING a wire-cut/protocol-error exit -1 (the body may have
 // run; re-running under legacy could double-apply a non-idempotent script).
-func (e *Executor) runRunnerSSH(ctx context.Context, srv *inventory.Server, body, runnerPath string, stepIdx int, step *Step, host string, timeoutSec int) (StepResult, bool) {
+func (e *Executor) runRunnerSSH(ctx context.Context, srv *inventory.Server, body, runnerPath string, stepIdx int, step *Step, host, entrypoint string, timeoutSec int) (StepResult, bool) {
 	// Same per-host connection-storm guard the legacy path applies before its
 	// exec (provider abuse detection); a saturated limiter falls back to legacy.
 	if err := sshconn.SSHRateLimit.Acquire(ctx, sshconn.SSHRateLimitKey(srv)); err != nil {
@@ -571,11 +578,18 @@ func (e *Executor) runRunnerSSH(ctx context.Context, srv *inventory.Server, body
 	stepCtx, cancelStep := context.WithTimeout(ctx, stepTimeout)
 	defer cancelStep()
 
+	// Client Step.Entrypoint semantics: empty runs the default bash interp path;
+	// a non-empty value makes the runner exec it as a supervised subprocess.
+	runnerEntrypoint := entrypoint
+	if runnerEntrypoint == "bash" {
+		runnerEntrypoint = ""
+	}
 	outcome, rerr := proc.Client.RunStep(stepCtx, rundaemon.Step{
-		Program: []byte(body),
-		Timeout: stepTimeout,
-		Name:    step.Name,
-		Host:    host,
+		Program:    []byte(body),
+		Timeout:    stepTimeout,
+		Name:       step.Name,
+		Host:       host,
+		Entrypoint: runnerEntrypoint,
 	})
 	_ = proc.Wait()
 
