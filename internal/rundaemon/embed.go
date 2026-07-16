@@ -2,21 +2,17 @@
 // daemon and (in later units) bootstraps them onto a remote host (U5) and
 // speaks the runner protocol as a client (U6a).
 //
-// # Embedded runners (U7 scaffold — placeholders)
+// # Embedded runners
 //
 // The daemon self-contains four cross-compiled shellkit-runner binaries
 // (decision #13: linux/amd64, linux/arm64, darwin/amd64, darwin/arm64),
-// gzip-compressed and embedded via [runnersFS]. The four .gz files committed
-// today under runners/ are PLACEHOLDERS — a gzip stream wrapping a sentinel
-// text, not a runnable binary — so that the //go:embed directive below
-// compiles and every package that imports rundaemon can build before
-// cmd/shellkit-runner exists (U3a/U3b build it).
-//
-// `just build-runners` (see the repo justfile) overwrites these placeholders
-// with real cross-compiled binaries once the runner source is complete;
-// U7-final wires that recipe's output into this directory for real. Until
-// that assembly happens, [RunnerGz] returns placeholder bytes — callers must
-// not assume a successful [RunnerGz] call means a bootable binary.
+// gzip-compressed and embedded via [runnersFS]. `just build-runners` (see the
+// repo justfile) cross-compiles the runner static (CGO_ENABLED=0, -trimpath),
+// stamps each with the content-hash version (ad-hoc codesigns darwin/arm64 per
+// decision #18), gzips them into runners/, and regenerates version_gen.go so
+// rundaemon.RunnerVersion matches the runner's stamped main.version — the
+// bootstrap version-sync invariant. The four .gz files (~6MB total) are real,
+// bootable binaries; [RunnerGz] returns the blob for a host's GOOS/GOARCH.
 package rundaemon
 
 import (
@@ -41,11 +37,6 @@ var runnersFS embed.FS
 // linux/amd64, linux/arm64, darwin/amd64, darwin/arm64. Any other pair
 // returns an error naming it — never a nil slice masquerading as "no
 // runner needed".
-//
-// PLACEHOLDER (U7 scaffold): until `just build-runners` runs against a
-// complete cmd/shellkit-runner (U3a/U3b), the bytes returned here decompress
-// to a sentinel string, not an executable. Bootstrap code built against this
-// accessor is correct; the binaries it pushes are not runnable yet.
 func RunnerGz(goos, goarch string) ([]byte, error) {
 	name := runnerAssetName(goos, goarch)
 	if name == "" {

@@ -28,11 +28,10 @@ package rundaemon
 // A digest or version mismatch is a DISTINCT logged diagnostic (security #5, not
 // a cosmetic trace note) → re-push ONCE → still bad ⇒ fallback.
 //
-// NOTE (placeholder era): embed.RunnerGz returns PLACEHOLDER bytes until U7-final
-// wires real cross-compiled binaries in. This logic is correct against the
-// placeholder; the real push/exec-test round-trip is validated live in U8/U9.
-// The real runner binary must also learn to answer `--version` (cmd/shellkit-runner
-// does not yet) for probe/exec-test to succeed against real bytes.
+// NOTE: RunnerGz now returns real cross-compiled binaries (U7-final) that answer
+// `--version` with RunnerVersion, so probe/exec-test match against real bytes.
+// The full push/exec-test round-trip over a live ssh channel is still validated
+// end-to-end in U8/U9.
 
 import (
 	"bytes"
@@ -53,12 +52,17 @@ import (
 	"github.com/caoer/shellkit/internal/sshconn"
 )
 
-// RunnerVersion is the content-hash version of the embedded runner binaries,
-// stamped at daemon-build time by U7's justfile via
-// `-ldflags "-X github.com/caoer/shellkit/internal/rundaemon.RunnerVersion=<hash>"`
-// — the same hash the runner reports from `--version`. It names the immutable
-// cache path (runner-<ver>-<os>-<arch>) and gates the probe HIT/miss decision.
-// "dev" until U7 stamps it.
+// RunnerVersion is the content-hash version of the embedded runner binaries —
+// the same hash the runner reports from `--version` (its main.version). It names
+// the immutable cache path (runner-<ver>-<os>-<arch>) and gates the probe
+// HIT/miss decision. The two MUST agree or bootstrap always sees a miss/mismatch
+// and never uses the pushed runner; that lockstep is the version-sync invariant.
+//
+// `just build-runners` writes both in one pass: it stamps the runner via
+// `-ldflags "-X main.version=<hash>"` and regenerates the committed
+// version_gen.go, whose init() overrides this default with the same <hash>. So a
+// plain `go build ./cmd/shellkit` picks up the matching version with no special
+// ldflags. Stays "dev" only if build-runners has never run (version_gen.go absent).
 var RunnerVersion = "dev"
 
 // Result is the bootstrap verdict handed back to the executor (U6b). Exactly one
