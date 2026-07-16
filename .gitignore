@@ -18,6 +18,7 @@ target/
 
 # Go
 /shellkit
+/shellkit-runner
 *.test
 *.out
 /sshkit

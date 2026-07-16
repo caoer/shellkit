@@ -48,6 +48,10 @@ type Server struct {
 	PreferNet      string `json:"prefer_net"`
 	ProxyJump      string `json:"proxy_jump"`
 	IdentitiesOnly bool   `json:"identities_only"`
+	// RunnerTmp is an optional per-host override for the shellkit-runner cache
+	// root (rundaemon bootstrap): when set it is tried first, ahead of the
+	// default ~/.cache → $XDG_CACHE_HOME → /var/tmp → /dev/shm chain.
+	RunnerTmp string `json:"runner_tmp"`
 }
 
 func (s Server) IsOrb() bool {
