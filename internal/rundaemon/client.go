@@ -205,6 +205,15 @@ func (c *Client) RunStep(ctx context.Context, step Step) (StepOutcome, error) {
 		}()
 	}
 	drainStderr := func(o *StepOutcome) {
+		// Close stdin BEFORE waiting for the stderr drain. The runner keeps its
+		// stderr open until it exits, and it exits only when its stdin hits EOF;
+		// over a real transport (ssh) whose stderr closes at process exit, waiting
+		// for the drain without first closing stdin deadlocks — the deferred
+		// stdin.Close() below fires only after RunStep returns, i.e. after this
+		// wait. Closing here lets the runner exit, its stderr reach EOF, and the
+		// copy finish. (A double close via the defer is a harmless no-op; the
+		// in-process pipe tests pass stderr=nil, so this path never blocked there.)
+		_ = c.stdin.Close()
 		stderrWG.Wait()
 		if s := stderrBuf.String(); s != "" {
 			o.Stderr += s

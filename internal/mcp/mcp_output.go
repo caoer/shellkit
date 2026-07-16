@@ -14,6 +14,14 @@ type TraceLine struct {
 	ElapsedSec int
 	LineNo     int // source line number from $LINENO; 0 if unavailable
 	Command    string
+
+	// Runner-path (mvdan/sh) trace fields (U0 §1.1). These are set only when the
+	// step ran under the runner (StepResult.RunnerPath == true); the legacy path
+	// leaves them zero and renders from ElapsedSec instead, keeping today's output
+	// byte-for-byte identical.
+	ElapsedNS  int64 // ns since step start, measured at cmd_start
+	DurationNS int64 // ns this command took, from cmd_end; 0 = unknown
+	Exit       *int  // command's own exit; nil = unknown/legacy. Rendered inline only when non-zero.
 }
 
 type StepResult struct {
@@ -29,6 +37,16 @@ type StepResult struct {
 	TimedOut   bool
 	TimeoutSec int
 	ShowTrace  bool // user requested trace: true → include in final output
+
+	// RouteNote is the per-host route provenance line (U0 §2). Empty on both the
+	// runner-success path and the pure legacy path (byte-identical to today);
+	// non-empty only when the runner was opted into but the step ran under the
+	// legacy path anyway (gap auto-route, bootstrap fallback, proto mismatch).
+	RouteNote string
+	// RunnerPath is true when this result came from the mvdan/sh runner. It
+	// selects the ns trace renderer in formatResults; false renders the legacy
+	// whole-second trace verbatim.
+	RunnerPath bool
 }
 
 type OutputStore struct {
