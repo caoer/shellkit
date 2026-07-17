@@ -1,6 +1,14 @@
 {
   description = "A reproducible kit for shell/CLI tooling";
 
+  # Embedded shellkit-runner binaries (see internal/rundaemon/embed.go, U7):
+  # `just build-runners` cross-compiles 4 static targets (linux/amd64+arm64,
+  # darwin/amd64+arm64) with CGO_ENABLED=0 — required because target hosts
+  # include NixOS, which has no /lib64/ld-linux for a dynamically linked
+  # binary. Each binary is gzip-compressed (~1.5MB) and go:embed'd into the
+  # daemon; ~6-7MB gz total pushes the daemon binary to ~20MB. If the runner
+  # is ever distributed via a Nix binary cache, omit `inputs.nixpkgs.follows`
+  # on any consuming flake input — pinning it silently causes cache misses.
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";

@@ -37,6 +37,13 @@ type EventStream struct {
 	recentLines []string // last N stdout/stderr lines (rendered)
 	stepName    string   // current step name
 
+	// progressDelegate, when set, supplies the ticker payload instead of the
+	// legacy summary fields above. The runner path (U6b) points it at the active
+	// rundaemon.Client's ProgressSummary so the ticker renders the live trace feed
+	// + phase: token (U0 §3); it is nil on the legacy path, which is what keeps
+	// the legacy ticker byte-identical.
+	progressDelegate func(int) string
+
 	// MCP server reference — used by sendMCPLog to forward output lines
 	// as notifications/message events in real time.
 	mcpSrv *server.MCPServer
@@ -182,6 +189,20 @@ func (s *EventStream) updateSummary(kind string, fields map[string]any) {
 	}
 }
 
+// SetProgressDelegate installs (or, with nil, clears) a function that supplies
+// the ticker payload for the currently-active runner step. The runner path sets
+// it to the driving rundaemon.Client's ProgressSummary around a step and clears
+// it after; fan-out is sequential (decision #10) so at most one delegate is ever
+// live. Safe to call concurrently with the ticker goroutine.
+func (s *EventStream) SetProgressDelegate(fn func(int) string) {
+	if s == nil {
+		return
+	}
+	s.liveMu.Lock()
+	s.progressDelegate = fn
+	s.liveMu.Unlock()
+}
+
 // ProgressSummary returns a compact multi-line string for MCP progress
 // notifications. Includes current step, executing command, and recent output.
 func (s *EventStream) ProgressSummary(elapsed int) string {
@@ -189,12 +210,19 @@ func (s *EventStream) ProgressSummary(elapsed int) string {
 		return fmt.Sprintf("executing (%ds)", elapsed)
 	}
 	s.liveMu.Lock()
+	delegate := s.progressDelegate
 	step := s.stepName
 	cmd := s.execCmd
 	host := s.execHost
 	lines := make([]string, len(s.recentLines))
 	copy(lines, s.recentLines)
 	s.liveMu.Unlock()
+
+	// Runner path: defer entirely to the live Client renderer (U0 §3). Called
+	// outside liveMu so the Client's own mutex never nests under ours.
+	if delegate != nil {
+		return delegate(elapsed)
+	}
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "executing (%ds)", elapsed)

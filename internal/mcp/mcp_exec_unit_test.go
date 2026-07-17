@@ -322,6 +322,27 @@ func TestWrapScript_Sh(t *testing.T) {
 	}
 }
 
+func TestWrapperShell_NonShellEntrypointsRunWrapperUnderBash(t *testing.T) {
+	// The wrapScript wrapper is shell code; the entrypoint is applied inside it.
+	// Feeding the wrapper to python3/node broke remotely (python3 -s parses the
+	// bash setup as Python → SyntaxError; node rejects -s outright). Non-shell
+	// entrypoints must resolve the WRAPPER interpreter to bash.
+	for _, ep := range []string{"python3", "python", "node", "deno", "bun", "ruby", "perl"} {
+		if got := wrapperShell(ep); got != "bash" {
+			t.Errorf("wrapperShell(%q) = %q, want bash (wrapper is shell code)", ep, got)
+		}
+	}
+	// Shell entrypoints keep executing their own wrapper — byte-for-byte legacy.
+	for _, ep := range []string{"bash", "sh", "zsh"} {
+		if got := wrapperShell(ep); got != ep {
+			t.Errorf("wrapperShell(%q) = %q, want %q", ep, got, ep)
+		}
+	}
+	if got := wrapperShell(""); got != "bash" {
+		t.Errorf("wrapperShell(\"\") = %q, want bash (default entrypoint)", got)
+	}
+}
+
 func TestWrapScript_StdbufUnbuffering(t *testing.T) {
 	wrapped := wrapScript("echo hi", "bash", "n1")
 	if !strings.Contains(wrapped, `command -v stdbuf`) {

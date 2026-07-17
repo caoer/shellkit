@@ -274,6 +274,12 @@ func formatResults(results []StepResult, store *OutputStore) string {
 
 		fmt.Fprintf(&b, "=== %s [%s] exit:%d ===\n", r.Name, host, r.ExitCode)
 
+		// Route-provenance note (U0 §2), inserted right after the header. Empty on
+		// the pure legacy path and the runner-success path — zero diff from today.
+		if r.RouteNote != "" {
+			fmt.Fprintf(&b, "note: %s\n", r.RouteNote)
+		}
+
 		if r.TimedOut {
 			if r.TimeoutSec > 0 {
 				fmt.Fprintf(&b, "TIMED OUT (after %ds)\n", r.TimeoutSec)
@@ -320,6 +326,23 @@ func formatResults(results []StepResult, store *OutputStore) string {
 				showTrace = showTrace[len(showTrace)-cap:]
 			}
 			for i, t := range showTrace {
+				if r.RunnerPath {
+					// Runner path (U0 §1.1/§1.2): ns-precision offset, directly
+					// measured per-command duration, and an inline exit:N only when
+					// the command's own exit was non-zero.
+					suffix := ""
+					if t.Exit != nil && *t.Exit != 0 {
+						suffix += fmt.Sprintf(" exit:%d", *t.Exit)
+					}
+					if i == len(showTrace)-1 && r.TimedOut {
+						suffix += "  ← timed out here"
+					} else if t.DurationNS > 0 {
+						suffix += fmt.Sprintf(" (%s)", formatDur(t.DurationNS))
+					}
+					fmt.Fprintf(&b, "  +%s  %s%s\n", formatDur(t.ElapsedNS), mcpTruncate(t.Command, 500), suffix)
+					continue
+				}
+				// Legacy path — byte-for-byte identical to today's output.
 				dur := ""
 				if i < len(showTrace)-1 {
 					d := showTrace[i+1].ElapsedSec - t.ElapsedSec
@@ -342,6 +365,22 @@ func formatResults(results []StepResult, store *OutputStore) string {
 	}
 
 	return b.String()
+}
+
+// formatDur renders a nanosecond duration self-scaling (ns/µs/ms/s), matching
+// the U0 trace-render contract (§1.1) and rundaemon.Client's live-ticker
+// formatter. The two MUST stay in sync; they render identical bytes.
+func formatDur(ns int64) string {
+	switch d := time.Duration(ns); {
+	case d < time.Microsecond:
+		return fmt.Sprintf("%dns", ns)
+	case d < time.Millisecond:
+		return fmt.Sprintf("%.1fµs", float64(ns)/1e3)
+	case d < time.Second:
+		return fmt.Sprintf("%.1fms", float64(ns)/1e6)
+	default:
+		return fmt.Sprintf("%.3fs", float64(ns)/1e9)
+	}
 }
 
 func mcpTruncate(s string, maxLen int) string {

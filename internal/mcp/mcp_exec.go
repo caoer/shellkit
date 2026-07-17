@@ -16,7 +16,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/caoer/shellkit/internal/interp"
 	"github.com/caoer/shellkit/internal/inventory"
+	"github.com/caoer/shellkit/internal/rundaemon"
 	"github.com/caoer/shellkit/internal/sshconn"
 )
 
@@ -182,13 +184,36 @@ func extractTrace(stdout, nonce string) (cleanStdout string, trace []TraceLine) 
 	return
 }
 
+// runnerDefaultOn is the U9 differential-gate flip point. FLIPPED 2026-07-17
+// (ZT, decisions/runner-default-on-flip.md) after the bash-differential corpus
+// went green: statically-screened bash scripts and non-bash entrypoints ride
+// the runner by default; gap constructs auto-route to legacy real bash, and
+// `"interp": false` still forces legacy. Reverting to opt-in is this ONE line.
+const runnerDefaultOn = true
+
+// runnerOptIn reports the step's runner posture from its DSL config, honoring
+// runnerDefaultOn. It also gates whether interp.Preflight runs at all: a step
+// that stays on the legacy path must behave byte-for-byte as today, including
+// running syntactically-invalid bash remotely rather than being refused locally.
+func runnerOptIn(cfg StepConfig) bool {
+	if cfg.Interp != nil {
+		return *cfg.Interp // explicit: true engages the runner, false forces legacy
+	}
+	return runnerDefaultOn // absent → the default posture
+}
+
 type Executor struct {
-	store   *OutputStore
-	servers []inventory.Server
+	store        *OutputStore
+	servers      []inventory.Server
+	bootstrapper *rundaemon.Bootstrapper
 }
 
 func NewExecutor(store *OutputStore, servers []inventory.Server) *Executor {
-	return &Executor{store: store, servers: servers}
+	return &Executor{
+		store:        store,
+		servers:      servers,
+		bootstrapper: rundaemon.NewBootstrapper(),
+	}
 }
 
 func (e *Executor) Execute(ctx context.Context, steps []Step) ([]StepResult, error) {
@@ -292,6 +317,7 @@ func (e *Executor) executeSSH(ctx context.Context, stepIdx int, step *Step) ([]S
 	}
 
 	var results []StepResult
+	fanout := len(hosts) > 1
 	for _, host := range hosts {
 		srv := e.resolveSSHHost(host)
 		if srv == nil {
@@ -315,6 +341,71 @@ func (e *Executor) executeSSH(ctx context.Context, stepIdx int, step *Step) ([]S
 			return nil, fmt.Errorf("step %q: template: %w", step.Name, err)
 		}
 
+		timeout := step.Config.Timeout
+		if timeout <= 0 {
+			timeout = defaultTimeout
+		}
+
+		// U6b per-host routing: the runner path is selected iff the step opted in
+		// (runnerOptIn), the preflight verdict is interp (bash bodies only —
+		// non-bash entrypoints skip preflight and ride the runner as supervised
+		// subprocesses with whole-step timing, hard constraint #4), and bootstrap
+		// yields a usable runner. Any other outcome runs the legacy path —
+		// verbatim today's behavior — carrying a RouteNote only when the runner
+		// was opted into and fell back (U0 §2/§5).
+		var routeNote string
+		if runnerOptIn(step.Config) {
+			runnerRoute := true
+			if entrypoint == "bash" {
+				verdict, perr := interp.Preflight([]byte(body))
+				if perr != nil {
+					// Unrecoverable syntax error: refuse BEFORE connecting, surfacing
+					// the positioned teaching error (interp.PreflightError) instead of a
+					// remote shell error. Aborts the whole step — an invalid body must
+					// not run on any host.
+					return nil, fmt.Errorf("step %q: %w", step.Name, perr)
+				}
+				if verdict.Route != interp.RouteInterp {
+					// Static gap auto-route (U0 §5.1): interp can't faithfully run this
+					// construct — legacy path, with the router's reason as the note.
+					routeNote = verdict.Reason
+					runnerRoute = false
+				}
+			}
+			if runnerRoute {
+				// Bootstrap counts against the step timeout: a hung smoke-test /
+				// push / version-probe on a cold host must not block past the
+				// step's configured budget. Bound it with a step-scoped context;
+				// a timed-out bootstrap returns Fallback and we drop to legacy —
+				// bootstrap itself never step-fails.
+				bootCtx, cancelBoot := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+				boot := e.bootstrapper.Bootstrap(bootCtx, srv)
+				cancelBoot()
+				if boot.Fallback {
+					// Bootstrap fallback (U0 §5.3): no usable runner on this host.
+					routeNote = boot.Reason
+				} else if result, ranBody := e.runRunnerSSH(ctx, srv, body, boot.RunnerPath, stepIdx, step, host, entrypoint, timeout); ranBody {
+					// Runner path is authoritative — including a wire-cut/protocol
+					// exit -1, which is NOT retried under legacy (the body may have
+					// executed, and the script may not be idempotent).
+					result.ShowTrace = traceRequested(step.Config)
+					e.writeStepOutput(&result, step.Name, host, fanout)
+					results = append(results, result)
+					if !step.Config.ContinueOnError && result.ExitCode != 0 {
+						break
+					}
+					continue
+				} else {
+					// Body provably never executed (spawn failure / proto mismatch
+					// at handshake) — safe to fall back to legacy with the note.
+					routeNote = result.RouteNote
+				}
+			}
+		}
+
+		// Legacy path — verbatim today's behavior. routeNote is "" unless the
+		// runner was opted into above and fell back, so a step that never engaged
+		// the runner renders byte-for-byte identically to today.
 		nonce := execNonce()
 		traced := shouldTrace(step.Config, entrypoint)
 		if traced {
@@ -322,29 +413,13 @@ func (e *Executor) executeSSH(ctx context.Context, stepIdx int, step *Step) ([]S
 		}
 		wrapped := wrapScript(body, entrypoint, nonce)
 
-		timeout := step.Config.Timeout
-		if timeout <= 0 {
-			timeout = defaultTimeout
-		}
-
 		tctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-		result := e.runSSH(tctx, srv, wrapped, nonce, stepIdx, step.Name, host, len(hosts) > 1, traced, entrypoint, timeout)
+		result := e.runSSH(tctx, srv, wrapped, nonce, stepIdx, step.Name, host, fanout, traced, entrypoint, timeout)
 		cancel()
 		result.ShowTrace = traceRequested(step.Config)
+		result.RouteNote = routeNote
 
-		outPath := e.store.StepFilePath(step.Name)
-		if len(hosts) > 1 {
-			outPath = e.store.StepFilePathForHost(step.Name, host)
-		}
-		if wErr := os.WriteFile(outPath, []byte(result.Stdout), 0644); wErr != nil {
-			if result.Error != "" {
-				result.Error += "; "
-			}
-			result.Error += fmt.Sprintf("output write failed: %v", wErr)
-		} else {
-			result.FilePath = outPath
-		}
-
+		e.writeStepOutput(&result, step.Name, host, fanout)
 		results = append(results, result)
 
 		if !step.Config.ContinueOnError && result.ExitCode != 0 {
@@ -363,10 +438,7 @@ func (e *Executor) executeSSH(ctx context.Context, stepIdx int, step *Step) ([]S
 }
 
 func (e *Executor) runSSH(ctx context.Context, srv *inventory.Server, script, nonce string, stepIdx int, stepName, host string, fanout bool, traced bool, entrypoint string, timeoutSec int) StepResult {
-	remoteShell := entrypoint
-	if remoteShell == "" {
-		remoteShell = "bash"
-	}
+	remoteShell := wrapperShell(entrypoint)
 
 	// resolveInvocation may call keyAuthWorks which already acquires a
 	// rate-limit slot for its SSH probe. Resolve first, then acquire a slot
@@ -446,6 +518,140 @@ func (e *Executor) runSSH(ctx context.Context, srv *inventory.Server, script, no
 // traceRequested reports whether the user explicitly set trace: true.
 func traceRequested(cfg StepConfig) bool {
 	return cfg.Trace != nil && *cfg.Trace
+}
+
+// writeStepOutput writes the step's stdout to its per-step (fan-out: per-host)
+// output file and records FilePath, so the {{step.output}} / {{step.host.output}}
+// machinery and the fan-out merge behave identically whichever route produced the
+// result. Shared verbatim by the runner and legacy SSH paths.
+func (e *Executor) writeStepOutput(result *StepResult, stepName, host string, fanout bool) {
+	outPath := e.store.StepFilePath(stepName)
+	if fanout {
+		outPath = e.store.StepFilePathForHost(stepName, host)
+	}
+	if wErr := os.WriteFile(outPath, []byte(result.Stdout), 0644); wErr != nil {
+		if result.Error != "" {
+			result.Error += "; "
+		}
+		result.Error += fmt.Sprintf("output write failed: %v", wErr)
+	} else {
+		result.FilePath = outPath
+	}
+}
+
+// runRunnerSSH drives one step on srv through the mvdan/sh runner: spawn the
+// bootstrapped runner over the SAME ssh invocation the legacy path uses
+// (rundaemon.SpawnSSH), drive it with the runner protocol (Client.RunStep), then
+// map the rundaemon.StepOutcome onto an mcp.StepResult (exit / $OUTPUT / trace /
+// stderr), preserving the timeout exit-137 and wire-cut exit -1 signatures.
+//
+// ranBody is false ONLY when the body provably never executed — a spawn failure,
+// a handshake rejection (proto/role/version mismatch) before the run frame, or a
+// run/file frame refused as oversize before being sent — so the caller may safely
+// fall back to the legacy path; the returned result then carries just the
+// RouteNote. Otherwise ranBody is true and the result is authoritative, INCLUDING
+// a wire-cut/protocol-error exit -1 (the body may have run; re-running under
+// legacy could double-apply a non-idempotent script).
+func (e *Executor) runRunnerSSH(ctx context.Context, srv *inventory.Server, body, runnerPath string, stepIdx int, step *Step, host, entrypoint string, timeoutSec int) (StepResult, bool) {
+	// Same per-host connection-storm guard the legacy path applies before its
+	// exec (provider abuse detection); a saturated limiter falls back to legacy.
+	if err := sshconn.SSHRateLimit.Acquire(ctx, sshconn.SSHRateLimitKey(srv)); err != nil {
+		return StepResult{RouteNote: fmt.Sprintf("runner ssh rate limit on %s (%v) — ran under legacy path", srv.Name, err)}, false
+	}
+
+	stepTimeout := time.Duration(timeoutSec) * time.Second
+	// The transport ctx outlives the step ctx so a step timeout cancels the step
+	// in-band (TERM→KILL over the wire → clean exit 137 result frame) while the
+	// ssh process stays alive long enough to read that result and reap cleanly,
+	// rather than being SIGKILLed into a wire cut (exit -1).
+	transportCtx, cancelTransport := context.WithTimeout(ctx, stepTimeout+15*time.Second)
+	defer cancelTransport()
+
+	proc, err := rundaemon.SpawnSSH(transportCtx, srv, runnerPath)
+	if err != nil {
+		return StepResult{RouteNote: fmt.Sprintf("runner spawn failed on %s (%v) — ran under legacy path", srv.Name, err)}, false
+	}
+
+	// Point the live 3s ticker at this Client's ProgressSummary for the step's
+	// lifetime (U0 §3: phase:bootstrap during handshake, phase:run once live);
+	// cleared on return so the legacy ticker payload resumes. SetProgressDelegate
+	// tolerates a nil stream.
+	stream := eventStreamFromContext(ctx)
+	stream.SetProgressDelegate(proc.Client.ProgressSummary)
+	defer stream.SetProgressDelegate(nil)
+
+	stepCtx, cancelStep := context.WithTimeout(ctx, stepTimeout)
+	defer cancelStep()
+
+	// Client Step.Entrypoint semantics: empty runs the default bash interp path;
+	// a non-empty value makes the runner exec it as a supervised subprocess.
+	runnerEntrypoint := entrypoint
+	if runnerEntrypoint == "bash" {
+		runnerEntrypoint = ""
+	}
+	outcome, rerr := proc.Client.RunStep(stepCtx, rundaemon.Step{
+		Program:    []byte(body),
+		Timeout:    stepTimeout,
+		Name:       step.Name,
+		Host:       host,
+		Entrypoint: runnerEntrypoint,
+		// Pin the handshake to the bootstrapped runner: bootstrap verified this
+		// binary's digest/version on-host, so a hello advertising any other
+		// version is a stale/wrong endpoint — reject it and fall back to legacy.
+		ExpectVersion: rundaemon.RunnerVersion,
+	})
+	_ = proc.Wait()
+
+	if rerr != nil {
+		// Client misuse (nil stdio) — the body never ran; fall back to legacy.
+		return StepResult{RouteNote: fmt.Sprintf("runner drive error on %s (%v) — ran under legacy path", srv.Name, rerr)}, false
+	}
+	if outcome.ProtoMismatch {
+		// Rejected at the handshake, before the run frame — the body never ran.
+		return StepResult{RouteNote: outcome.Error + " — ran under legacy path for this step"}, false
+	}
+	if outcome.UnsentOversize {
+		// The run/file frame exceeded the wire limit and was NEVER sent, so the
+		// body provably did not execute — fall back to legacy (which streams the
+		// body over ssh stdin with no per-line ceiling) rather than reporting a
+		// false exit -1.
+		return StepResult{RouteNote: outcome.Error + " — ran under legacy path for this step"}, false
+	}
+
+	result := StepResult{
+		Name:       step.Name,
+		Host:       host,
+		ExitCode:   outcome.Exit,
+		Stdout:     outcome.Stdout,
+		Stderr:     outcome.Stderr,
+		Outputs:    outcome.Outputs,
+		Trace:      adaptRunnerTrace(outcome.Trace),
+		TimedOut:   stepCtx.Err() == context.DeadlineExceeded,
+		TimeoutSec: timeoutSec,
+		RunnerPath: true,
+		Error:      outcome.Error,
+	}
+	return result, true
+}
+
+// adaptRunnerTrace maps rundaemon's render-agnostic TraceLine (its own type, so
+// rundaemon never imports mcp) onto mcp's TraceLine, carrying the ns-precision
+// timing fields the runner-path renderer reads (U0 §1.1). ElapsedSec/LineNo stay
+// zero — the runner path renders from ElapsedNS/DurationNS, not the legacy ints.
+func adaptRunnerTrace(in []rundaemon.TraceLine) []TraceLine {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]TraceLine, len(in))
+	for i, t := range in {
+		out[i] = TraceLine{
+			Command:    t.Command,
+			ElapsedNS:  t.ElapsedNS,
+			DurationNS: t.DurationNS,
+			Exit:       t.Exit,
+		}
+	}
+	return out
 }
 
 func (e *Executor) executeLocal(ctx context.Context, stepIdx int, step *Step) ([]StepResult, error) {
@@ -706,6 +912,20 @@ func (e *Executor) mergeFanoutOutputs(stepName string, perHost []StepResult) Ste
 	}
 	merged.Stdout = b.String()
 	return merged
+}
+
+// wrapperShell picks the remote interpreter that executes the wrapScript
+// wrapper itself. The wrapper is shell code — the step's entrypoint is applied
+// INSIDE it (`$_UNBUF <entrypoint> $_SSH_SCRIPT`) — so feeding the wrapper to a
+// non-shell interpreter (python3 -s, node -s) breaks: bash setup lines hit the
+// wrong parser. Shell entrypoints keep running their own wrapper (byte-for-byte
+// legacy behavior); everything else runs the wrapper under bash.
+func wrapperShell(entrypoint string) string {
+	switch entrypoint {
+	case "bash", "sh", "zsh":
+		return entrypoint
+	}
+	return "bash"
 }
 
 func wrapScript(body, entrypoint, nonce string) string {

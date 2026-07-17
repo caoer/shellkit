@@ -14,6 +14,7 @@ type StepConfig struct {
 	Entrypoint      string          `json:"entrypoint,omitempty"`
 	Timeout         int             `json:"timeout,omitempty"`
 	Trace           *bool           `json:"trace,omitempty"`
+	Interp          *bool           `json:"interp,omitempty"` // opt into the mvdan/sh runner path (nil = default posture, see runnerOptIn)
 	ContinueOnError bool            `json:"continue_on_error,omitempty"`
 	TmuxRaw         json.RawMessage `json:"tmux,omitempty"`
 	Jump            string          `json:"jump,omitempty"`     // SSH ProxyJump — hop through this host to reach the target
