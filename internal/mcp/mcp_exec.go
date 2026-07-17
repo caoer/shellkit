@@ -438,10 +438,7 @@ func (e *Executor) executeSSH(ctx context.Context, stepIdx int, step *Step) ([]S
 }
 
 func (e *Executor) runSSH(ctx context.Context, srv *inventory.Server, script, nonce string, stepIdx int, stepName, host string, fanout bool, traced bool, entrypoint string, timeoutSec int) StepResult {
-	remoteShell := entrypoint
-	if remoteShell == "" {
-		remoteShell = "bash"
-	}
+	remoteShell := wrapperShell(entrypoint)
 
 	// resolveInvocation may call keyAuthWorks which already acquires a
 	// rate-limit slot for its SSH probe. Resolve first, then acquire a slot
@@ -915,6 +912,20 @@ func (e *Executor) mergeFanoutOutputs(stepName string, perHost []StepResult) Ste
 	}
 	merged.Stdout = b.String()
 	return merged
+}
+
+// wrapperShell picks the remote interpreter that executes the wrapScript
+// wrapper itself. The wrapper is shell code — the step's entrypoint is applied
+// INSIDE it (`$_UNBUF <entrypoint> $_SSH_SCRIPT`) — so feeding the wrapper to a
+// non-shell interpreter (python3 -s, node -s) breaks: bash setup lines hit the
+// wrong parser. Shell entrypoints keep running their own wrapper (byte-for-byte
+// legacy behavior); everything else runs the wrapper under bash.
+func wrapperShell(entrypoint string) string {
+	switch entrypoint {
+	case "bash", "sh", "zsh":
+		return entrypoint
+	}
+	return "bash"
 }
 
 func wrapScript(body, entrypoint, nonce string) string {
