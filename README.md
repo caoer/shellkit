@@ -14,9 +14,10 @@ remote hosts.
 - MCP `ssh` tool — a step-based DSL for running scripts, fan-out, file
   transfer, and output chaining on remote hosts
 - Two execution paths for that DSL — a fast in-process command runner
-  (nanosecond-precision trace, real per-command exit codes) opt-in per step via
-  `"interp": true`, falling back to the legacy real-bash path for anything
-  outside its bash-compatible subset; see
+  (nanosecond-precision trace, real per-command exit codes) on by default for
+  statically-screened scripts, falling back to the legacy real-bash path for
+  anything outside its bash-compatible subset (`"interp": false` forces legacy
+  per step); see
   [skills/shellkit-expert/SKILL.md](skills/shellkit-expert/SKILL.md)
 - TUI log dashboard for MCP call history
 

@@ -184,12 +184,12 @@ func extractTrace(stdout, nonce string) (cleanStdout string, trace []TraceLine) 
 	return
 }
 
-// runnerDefaultOn is the U9 differential-gate flip point. While false, the
-// mvdan/sh runner is strictly OPT-IN: only a step with `"interp": true` engages
-// it; everything else runs the legacy real-bash path verbatim. U9 flips this to
-// true (runner default-on for statically-screened bash scripts, `"interp": false`
-// forces legacy) in this ONE line once the bash-differential corpus is green.
-const runnerDefaultOn = false
+// runnerDefaultOn is the U9 differential-gate flip point. FLIPPED 2026-07-17
+// (ZT, decisions/runner-default-on-flip.md) after the bash-differential corpus
+// went green: statically-screened bash scripts and non-bash entrypoints ride
+// the runner by default; gap constructs auto-route to legacy real bash, and
+// `"interp": false` still forces legacy. Reverting to opt-in is this ONE line.
+const runnerDefaultOn = true
 
 // runnerOptIn reports the step's runner posture from its DSL config, honoring
 // runnerDefaultOn. It also gates whether interp.Preflight runs at all: a step

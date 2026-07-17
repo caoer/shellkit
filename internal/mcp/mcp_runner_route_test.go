@@ -8,12 +8,14 @@ import (
 	"github.com/caoer/shellkit/internal/rundaemon"
 )
 
-// TestRunnerDefaultOn_OptInPosture pins the U6b default posture: the runner is
-// strictly opt-in while the U9 differential gate (runnerDefaultOn) is off. This
-// is the single flip point U9 changes to make the runner default-on.
-func TestRunnerDefaultOn_OptInPosture(t *testing.T) {
-	if runnerDefaultOn {
-		t.Fatal("runnerDefaultOn must be false until the U9 differential gate is green (this is the one-line flip point)")
+// TestRunnerDefaultOn_DefaultOnPosture pins the post-flip default posture: the
+// U9 differential gate went green and ZT authorized the flip on 2026-07-17
+// (decisions/runner-default-on-flip.md), so the runner is DEFAULT-ON. An absent
+// interp key engages the runner; `"interp": false` remains the forced-legacy
+// escape hatch. Reverting to opt-in is the same one-line flip point.
+func TestRunnerDefaultOn_DefaultOnPosture(t *testing.T) {
+	if !runnerDefaultOn {
+		t.Fatal("runnerDefaultOn must be true — the U9 gate is green and the flip was authorized (decisions/runner-default-on-flip.md); flipping back to opt-in requires a decision, not drift")
 	}
 
 	trueVal := true
@@ -23,7 +25,7 @@ func TestRunnerDefaultOn_OptInPosture(t *testing.T) {
 		cfg  StepConfig
 		want bool
 	}{
-		{"absent -> default posture (off)", StepConfig{}, false},
+		{"absent -> default posture (on)", StepConfig{}, true},
 		{"interp:false -> forced legacy", StepConfig{Interp: &falseVal}, false},
 		{"interp:true -> runner engaged", StepConfig{Interp: &trueVal}, true},
 	}

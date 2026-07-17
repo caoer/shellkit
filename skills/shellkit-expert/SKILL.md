@@ -96,13 +96,13 @@ use the legacy real-bash path below, never the runner):
 {"ssh": "host", "interp": false}  // force legacy, even for a script the runner could handle
 ```
 
-**Current posture: opt-in.** A step needs `"interp": true` to engage the runner at all — omit the
-field (or set anything other than `true`) and the step runs the legacy path exactly as before. The
-runner has cleared its go/no-go gate (a 43-script bash-vs-runner differential corpus, 0 unexplained
-divergences) and default-on for statically-screened bash scripts is designed and ready, but the
-flip to make it the default is a separate, deliberate step that hasn't landed — don't assume either
-posture from this doc alone; `runnerDefaultOn` in `internal/mcp/mcp_exec.go` is the live source of
-truth. Until it flips, add `"interp": true` per step to use the runner.
+**Current posture: default-on.** The runner cleared its go/no-go gate (a bash-vs-runner
+differential corpus, 0 unexplained divergences) and the flip landed 2026-07-17: an absent `interp`
+field engages the runner for statically-screened scripts, with gap constructs and silent-divergence
+idioms still auto-routed to legacy real bash. `"interp": false` is the per-step escape hatch that
+forces legacy; `"interp": true` remains valid (explicit request, same routing rules). Don't assume
+either posture from this doc alone — `runnerDefaultOn` in `internal/mcp/mcp_exec.go` is the live
+source of truth.
 
 **Environment contract (runner path).** A step run under the runner does **not** inherit the full
 remote login environment. It gets a fixed operational allowlist — `PATH HOME USER LOGNAME SHELL
