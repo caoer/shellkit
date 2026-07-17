@@ -4,13 +4,14 @@
 
 Deep-dive for the mvdan/sh runner introduced alongside the `"interp"` DSL flag — see SKILL.md
 "Two execution paths" for the flag itself and when a step falls back. This file covers what
-happens under the hood the first time a host runs an `"interp": true` step, how to read the
+happens under the hood the first time a host runs a runner-routed step (default-on since
+2026-07-17: any statically-screened step without `"interp": false`), how to read the
 failure diagnostics, and the two divergence classes that stay documented rather than silently
 shipped.
 
 ## Bootstrap: push, cache, verify
 
-The first `"interp": true` step against a host pushes the runner binary; every step after reuses
+The first runner-routed step against a host pushes the runner binary; every step after reuses
 it. The push rides the exact same ssh exec channel the tool already uses for everything else — no
 sftp subsystem, no extra auth round-trip.
 
