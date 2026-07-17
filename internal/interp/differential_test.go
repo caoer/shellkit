@@ -121,3 +121,80 @@ func details(axes []string, b, i RunResult) []string {
 	}
 	return out
 }
+
+// baseResult is a fully-known, non-diverging RunResult used as the identical
+// baseline for the DiffAxes oracle: mutating exactly one field must surface
+// exactly that axis, and an unmodified copy must surface none.
+func baseResult() RunResult {
+	return RunResult{
+		Stdout:   "out",
+		Stderr:   "err",
+		Exit:     0,
+		Cwd:      ".",
+		CwdKnown: true,
+		Env:      map[string]string{"K": "v"},
+		EnvKnown: true,
+		Files:    map[string]string{"f": "hash"},
+		Panicked: false,
+	}
+}
+
+// TestDiffAxesOracle is the positive oracle for DiffAxes (review finding #10):
+// the go/no-go gate for the held default-on flip. The corpus test only proves
+// DiffAxes returns EMPTY on interp-match scripts; if DiffAxes regressed to
+// always-empty, every screener hole would pass silently. This test proves the
+// opposite direction: each axis MUST fire when the two runs differ on exactly
+// that axis, and an identical pair MUST yield no axes.
+func TestDiffAxesOracle(t *testing.T) {
+	// Identical pair: no axis may fire.
+	if axes := DiffAxes(baseResult(), baseResult()); len(axes) != 0 {
+		t.Fatalf("DiffAxes on identical results returned %v, want none", axes)
+	}
+
+	cases := []struct {
+		axis   string
+		mutate func(r *RunResult) // applied to the interp side only
+	}{
+		{"stdout", func(r *RunResult) { r.Stdout = "different" }},
+		{"stderr", func(r *RunResult) { r.Stderr = "different" }},
+		{"exit", func(r *RunResult) { r.Exit = 3 }},
+		{"cwd", func(r *RunResult) { r.Cwd = "sub" }},
+		{"env", func(r *RunResult) { r.Env = map[string]string{"K": "changed"} }},
+		{"files", func(r *RunResult) { r.Files = map[string]string{"f": "other"} }},
+		{"panic", func(r *RunResult) { r.Panicked = true }},
+	}
+	for _, c := range cases {
+		t.Run(c.axis, func(t *testing.T) {
+			b := baseResult()
+			i := baseResult()
+			c.mutate(&i)
+			axes := DiffAxes(b, i)
+			if len(axes) != 1 || axes[0] != c.axis {
+				t.Fatalf("mutating %s: DiffAxes = %v, want exactly [%s]", c.axis, axes, c.axis)
+			}
+		})
+	}
+}
+
+// TestDiffAxesGatedByKnown proves the cwd/env axes are correctly SUPPRESSED when
+// a run could not probe them (CwdKnown/EnvKnown false) — otherwise a script that
+// exits/execs before the bash probe would report a spurious divergence and mask
+// or invent screener holes. Files/exit/stdout/stderr are always compared.
+func TestDiffAxesGatedByKnown(t *testing.T) {
+	// cwd differs but one side is unknown -> not reported.
+	b := baseResult()
+	i := baseResult()
+	i.Cwd = "elsewhere"
+	i.CwdKnown = false
+	if axes := DiffAxes(b, i); len(axes) != 0 {
+		t.Fatalf("cwd with CwdKnown=false must be suppressed, got %v", axes)
+	}
+	// env differs but one side is unknown -> not reported.
+	b = baseResult()
+	i = baseResult()
+	i.Env = map[string]string{"K": "x"}
+	i.EnvKnown = false
+	if axes := DiffAxes(b, i); len(axes) != 0 {
+		t.Fatalf("env with EnvKnown=false must be suppressed, got %v", axes)
+	}
+}

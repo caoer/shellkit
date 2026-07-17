@@ -42,13 +42,66 @@ type supervisor struct {
 	groups map[int]struct{}   // pgids of external commands currently running
 	cancel context.CancelFunc // cancels the running step's interp/subprocess context; nil when idle
 
+	// sawBackground records whether any step body run under interp contained a
+	// backgrounded statement (`… &`). It is set from the AST BEFORE interp.Run, so
+	// it is true regardless of the async goroutine timing that makes the pgid
+	// itself register late. reapAll reads it to decide whether the async-registration
+	// window even exists: no `&` ⇒ no interp background goroutine ⇒ no orphan can
+	// register after interp.Run returns, so a single killAll is provably complete.
+	// Mutex-guarded so the exec-path setter and the exit-path reader never race.
+	sawBackground bool
+
 	logMu  sync.Mutex // serializes errOut writes across the escalate goroutine and the frame loop
 	errOut io.Writer  // diagnostics only (SIGKILL escalation notes); never the protocol stdout
+
+	// reapPollInterval / reapWindow bound reapAll's re-poll on the background path.
+	// Per-supervisor (not package globals) so a test can shrink them on its own
+	// supervisor without racing the production defaults another goroutine reads —
+	// they are set once at construction and never mutated once reapAll may run.
+	reapPollInterval time.Duration
+	reapWindow       time.Duration
 }
+
+// reapPollInterval and reapWindow are the production defaults for reapAll's
+// bounded re-poll on the background path. The window is the FULL duration reapAll
+// polls when a background command was launched: it must comfortably outlast the
+// worst-case lag between interp.Run returning and the background command reaching
+// supervise.addGroup (the reviewer measured ~300ms). reapAll polls the whole
+// window with NO early-exit, because an empty group set cannot distinguish "no
+// orphan" from "orphan not yet registered" — the exact ambiguity that made the old
+// early-exit unsound. The window is chosen well above the measured lag; the common
+// case (no `&`) skips the window entirely, so its length costs nothing there.
+const (
+	defaultReapPollInterval = 20 * time.Millisecond
+	defaultReapWindow       = 1000 * time.Millisecond
+)
 
 // newSupervisor returns a supervisor writing diagnostics to errOut.
 func newSupervisor(errOut io.Writer) *supervisor {
-	return &supervisor{groups: make(map[int]struct{}), errOut: errOut}
+	return &supervisor{
+		groups:           make(map[int]struct{}),
+		errOut:           errOut,
+		reapPollInterval: defaultReapPollInterval,
+		reapWindow:       defaultReapWindow,
+	}
+}
+
+// markBackgroundLaunched records that a step body launched a backgrounded command
+// under interp, so reapAll polls its full window for the late-registering orphan
+// instead of trusting a single (possibly premature) killAll snapshot. Idempotent;
+// once true it stays true for the connection's lifetime.
+func (s *supervisor) markBackgroundLaunched() {
+	s.mu.Lock()
+	s.sawBackground = true
+	s.mu.Unlock()
+}
+
+// backgroundLaunched reports whether any step under this supervisor backgrounded a
+// command. reapAll gates its re-poll on it.
+func (s *supervisor) backgroundLaunched() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sawBackground
 }
 
 // beginStep records the cancel func for the step about to run so a signal frame
@@ -90,10 +143,14 @@ func (s *supervisor) cancelStep() {
 	}
 }
 
-// killAll SIGKILLs every still-registered process group immediately. The wire is
-// gone, so there is no graceful TERM/grace window — tear the children down and let
-// the runner exit. Best-effort: an already-reaped group (ESRCH) is ignored.
-func (s *supervisor) killAll() {
+// killAll SIGKILLs every still-registered process group immediately and reports
+// how many it killed. The wire is gone, so there is no graceful TERM/grace window
+// — tear the children down and let the runner exit. Best-effort: an already-reaped
+// group (ESRCH) is ignored. It is the ONE-SHOT snapshot used on paths where a live
+// process group is already registered (the mid-step wire-death watchdog); the
+// run-exit orphan reap uses reapAll, which — when a background command was launched
+// — re-polls over a bounded window to catch the group that registers late.
+func (s *supervisor) killAll() int {
 	s.mu.Lock()
 	pgids := make([]int, 0, len(s.groups))
 	for pgid := range s.groups {
@@ -102,6 +159,61 @@ func (s *supervisor) killAll() {
 	s.mu.Unlock()
 	for _, pgid := range pgids {
 		_ = killGroupHard(pgid)
+	}
+	return len(pgids)
+}
+
+// reapAll is the run-exit orphan reap. Its soundness turns on a single fact
+// established BEFORE interp.Run: whether the step launched a backgrounded command
+// (`… &`). That detection (markBackgroundLaunched, driven by the AST walk in
+// runInterp) is what makes the reap correct — not any timing of the group set.
+//
+// The problem the flag solves: mvdan/sh runs a backgrounded external command in a
+// goroutine that interp.Run does NOT join. Run returns as soon as the FOREGROUND
+// statements finish, while the background command's goroutine may still be between
+// cmd.Start() (process alive) and supervise.addGroup(pgid) (process registered) —
+// the reviewer measured the pgid appearing ~300ms after Run returned. interp
+// exposes no synchronous hook to observe those pending goroutines (bgProcs is
+// unexported and only the `wait` builtin joins it). An empty group set at exit
+// therefore cannot distinguish "no orphan" from "orphan not yet registered", so
+// ANY logic that returns early on an empty snapshot can leak the late orphan. The
+// prior early-exit-on-two-empty-polls returned at ~40ms — long before the ~300ms
+// registration — and leaked exactly this case.
+//
+// The sound design:
+//
+//   - No `&` in any step body ⇒ interp launched no background goroutine ⇒ nothing
+//     can register after interp.Run returns. A single killAll is complete. This is
+//     the overwhelmingly common case and costs one snapshot, zero added latency.
+//
+//   - A `&` was seen ⇒ a background orphan MAY register up to ~300ms late. reapAll
+//     polls the FULL bounded window (reapWindow) with NO early-exit, SIGKILLing any
+//     group each poll observes. Polling the whole window is what guarantees the
+//     invariant: a background command that registers its pgid anytime up to the
+//     window ceiling is SIGKILLed before reapAll returns. The window (1s default)
+//     is well above the measured ~300ms lag, and the loop is hard-bounded by the
+//     deadline, so it can never hang the runner's exit.
+//
+// Any still-running FOREGROUND command has already been killed by the caller's own
+// per-command escalation; this reap targets only the background orphan that
+// outlives interp.Run. It is best-effort throughout (ESRCH on an already-reaped
+// group is ignored).
+func (s *supervisor) reapAll() {
+	if !s.backgroundLaunched() {
+		// No background command was ever launched under interp, so no group can
+		// register after the interpreter returned: a single snapshot is complete.
+		s.killAll()
+		return
+	}
+	// A background command was launched: it may register its pgid up to ~300ms after
+	// interp.Run returned. Poll the full window (no early-exit on an empty set — that
+	// set cannot prove the orphan will never appear) so a late registration within
+	// the ceiling is always caught. Kill the initial snapshot first, then re-poll.
+	s.killAll()
+	deadline := time.Now().Add(s.reapWindow)
+	for time.Now().Before(deadline) {
+		time.Sleep(s.reapPollInterval)
+		s.killAll()
 	}
 }
 

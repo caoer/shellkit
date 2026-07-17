@@ -94,6 +94,25 @@ func run(in io.Reader, out, errOut io.Writer) error {
 	// A step's scratch dir may outlive its last run frame only if the stream ends
 	// mid-step (files staged, no run); clean it up on exit either way.
 	defer r.resetScratch()
+	// Reap every tracked process group on ANY runner exit (#7). A step body may
+	// leave a backgrounded external command running with no `wait` (`sleep 600 &`):
+	// runStep returns after the result frame while the bg group is still alive, and
+	// the clean-EOF-after-result branch would otherwise let the runner exit and the
+	// scratch be cleaned while that group survives as an orphan on the remote host.
+	//
+	// A one-shot killAll snapshot RACES here and is NOT sufficient when a step
+	// backgrounded a command: mvdan/sh runs a backgrounded external command in a
+	// goroutine interp.Run does not join, so at the instant handleRun/interp.Run
+	// returns the orphan's process group has often NOT yet been registered with the
+	// supervisor (measured ~300ms lag). reapAll gates on whether any step launched a
+	// `&` (detected from the AST before interp.Run, so it is immune to that timing):
+	// if none did, no group can register late and it is a single snapshot; if one
+	// did, it polls a bounded window, SIGKILLing any group that registers late, so
+	// the teardown holds across EVERY exit path (clean EOF, errStreamEnd, wire cut,
+	// protocol error). It runs before resetScratch (LIFO) — order is immaterial, both
+	// are best-effort. The mid-step wire-death watchdog keeps its one-shot killAll (a
+	// live group is already registered there; no async window to close).
+	defer r.supervisor().reapAll()
 
 	// Handshake: the daemon's opening hello may be preceded by login banner/MOTD
 	// noise, which DecodeHello tolerates. After it returns, noise is a protocol

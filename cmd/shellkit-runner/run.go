@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/caoer/shellkit/internal/runnerproto"
 	"mvdan.cc/sh/v3/expand"
@@ -94,10 +95,16 @@ func (r *runner) handleRun(ctx context.Context, rf *runnerproto.RunFrame) error 
 
 	outputPath := filepath.Join(scratch, outputFileName)
 	// Pre-create $OUTPUT so a step that only appends still finds it, and so an
-	// empty result is unambiguous (present-but-empty vs never-written).
-	if f, cerr := os.Create(outputPath); cerr == nil {
-		_ = f.Close()
+	// empty result is unambiguous (present-but-empty vs never-written). A create
+	// failure (ENOSPC, perms) is fatal to THIS step: without a writable $OUTPUT the
+	// body's declared outputs would silently vanish and a last-command-succeeds body
+	// would falsely report success (#13). Surface it as an error result BEFORE
+	// running the body rather than swallowing it.
+	f, cerr := os.Create(outputPath)
+	if cerr != nil {
+		return r.emitResult(runnerproto.ResultFrame{Exit: 1, Error: fmt.Sprintf("$OUTPUT create failed: %v", cerr)})
 	}
+	_ = f.Close()
 
 	// ctx carries the step's cancellation (wall-clock timeout OR an in-band signal
 	// frame); runStep registered its cancel with the supervisor BEFORE this
@@ -112,7 +119,17 @@ func (r *runner) handleRun(ctx context.Context, rf *runnerproto.RunFrame) error 
 	}
 	wallNS := time.Since(start).Nanoseconds()
 
+	// Cap the collected $OUTPUT so the single output frame line stays under
+	// MaxLineBytes (#1a). collectOutput reads $OUTPUT unbounded, and packing an
+	// oversized value into one frame produces a line the daemon decoder rejects as
+	// a protocol error — turning a SUCCESSFUL step into a spurious exit -1 with no
+	// legacy fallback. capOutputs truncates oversized values in place (with an
+	// explicit marker) and reports what it trimmed so we can surface a diagnostic
+	// on the runner's self-diagnostics channel (stderr), never as a frame.
 	if vals := collectOutput(outputPath); len(vals) > 0 {
+		if note := capOutputs(vals); note != "" {
+			r.supervisor().logf("shellkit-runner: %s\n", note)
+		}
 		if err := r.enc.Encode(runnerproto.Frame{
 			Type:   runnerproto.FrameOutput,
 			Output: &runnerproto.OutputFrame{Values: vals},
@@ -121,6 +138,89 @@ func (r *runner) handleRun(ctx context.Context, rf *runnerproto.RunFrame) error 
 		}
 	}
 	return r.emitResult(runnerproto.ResultFrame{Exit: exitCode, WallNS: wallNS, Error: runErr})
+}
+
+// maxOutputAggregateBytes bounds the total RAW bytes (keys + values) the runner
+// packs into one output frame, chosen so the serialized frame line stays safely
+// under runnerproto.MaxLineBytes even under worst-case JSON string escaping. A
+// single byte can escape to the 6-byte "\u00XX" form, so escaped content expands
+// up to ~6×; MaxLineBytes/8 (128 KiB) keeps even an all-control-char payload's
+// escaped size (~768 KiB) under the 1 MiB line cap with room for the JSON
+// envelope ({"type":"output","output":{"values":{…}}}) and the frame delimiter.
+const maxOutputAggregateBytes = runnerproto.MaxLineBytes / 8 // 128 KiB, comfortably under the 1 MiB line cap
+
+// outputTruncatedMarker is appended to a value the runner had to truncate so the
+// caller can tell a capped value from a naturally short one.
+const outputTruncatedMarker = "…[truncated by runner]"
+
+// capOutputs enforces the documented $OUTPUT cap (frames.go: "$OUTPUT values are
+// capped by the runner well under MaxLineBytes"): it truncates values in place so
+// the aggregate raw size (keys + values) stays under maxOutputAggregateBytes,
+// keeping the serialized output frame safely below runnerproto.MaxLineBytes. Keys
+// are processed in sorted order for determinism. It returns a human-readable note
+// naming what it trimmed (empty when nothing was capped) for the self-diagnostics
+// channel; it NEVER drops a key, so every declared output still round-trips.
+func capOutputs(vals map[string]string) string {
+	keys := make([]string, 0, len(vals))
+	for k := range vals {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	// used tracks the running aggregate (keys + values, post-truncation) so the
+	// total NEVER exceeds maxOutputAggregateBytes — the marker is counted against
+	// the budget, not tacked on beyond it.
+	used := 0
+	var trimmed []string
+	for _, k := range keys {
+		used += len(k)
+		v := vals[k]
+		remaining := maxOutputAggregateBytes - used
+		if len(v) <= remaining {
+			used += len(v)
+			continue
+		}
+		// Truncate v so the whole replacement — safeTruncate(v, keep)+marker — fits
+		// the remaining budget, keeping `used` monotonically under the cap. When the
+		// budget can't even hold the marker (a pathological run of keys already spent
+		// it), drop the marker too and clamp to whatever fits (possibly empty), so a
+		// degenerate case can never push the aggregate over the ceiling. remaining is
+		// non-negative here (len(v) > remaining ≥ 0 on entry).
+		keep := remaining - len(outputTruncatedMarker)
+		if keep >= 0 {
+			if keep > len(v) {
+				keep = len(v)
+			}
+			vals[k] = safeTruncate(v, keep) + outputTruncatedMarker
+		} else {
+			// Not even room for the marker: keep only what the raw budget allows.
+			vals[k] = safeTruncate(v, remaining)
+		}
+		used += len(vals[k])
+		trimmed = append(trimmed, fmt.Sprintf("%q (%d→%d bytes)", k, len(v), len(vals[k])))
+	}
+	if len(trimmed) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("$OUTPUT exceeded %d bytes; truncated %d value(s): %s",
+		maxOutputAggregateBytes, len(trimmed), strings.Join(trimmed, ", "))
+}
+
+// safeTruncate returns the first n bytes of s without splitting a trailing
+// multi-byte UTF-8 rune, so the truncated value stays valid UTF-8 (the JSON
+// encoder would otherwise emit a replacement char, but keeping it clean avoids a
+// surprising byte in the collected output).
+func safeTruncate(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	if n >= len(s) {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }
 
 // runInterp runs the body through the mvdan/sh interpreter and returns the exit
@@ -135,6 +235,17 @@ func (r *runner) runInterp(ctx context.Context, rf *runnerproto.RunFrame, scratc
 		// The daemon preflights parsing before sending, so this is defensive; a
 		// parse failure here is a runner-level error, not a step exit.
 		return 2, fmt.Sprintf("parse: %v", err)
+	}
+
+	// Detect a backgrounded statement (`… &`) in the body BEFORE running it. interp
+	// runs such a command in a goroutine it does NOT join, so the command's process
+	// group can register with the supervisor up to ~300ms AFTER interp.Run returns
+	// — long after a naive run-exit snapshot would have looked. Marking the flag
+	// from the static AST (not from the group set, which is exactly what races)
+	// makes the run-exit reap poll its full window for that late orphan. The common
+	// case (no `&`) leaves the flag false and the reap stays a single snapshot.
+	if hasBackgroundStmt(prog) {
+		r.supervisor().markBackgroundLaunched()
 	}
 
 	// CLOSED env (decision #17). interp.Env(nil) would fall back to os.Environ()
@@ -152,10 +263,16 @@ func (r *runner) runInterp(ctx context.Context, rf *runnerproto.RunFrame, scratc
 	// CallHandler traces builtins, so the trace never goes blind on cd/export/etc.
 	// A fresh tracer per step restarts Seq at 1. Process-group control (setpgid +
 	// TERM→grace→KILL(-pgid)) lives in tracer.runExternal via the supervisor (U4).
+	//
+	// CWD parity (#4): the body runs from the runner PROCESS's inherited working
+	// directory — the remote ssh login dir — exactly as the legacy `bash -s` path
+	// does, so `cat .env`, `./deploy.sh`, and relative paths resolve identically
+	// under interp:true. interp.Dir is deliberately NOT set to the ephemeral
+	// scratch dir; scratch only hosts the runner-owned $OUTPUT file (absolute path
+	// via env OUTPUT) and any staged file frames (referenced by absolute path).
 	tr := newTracer(r.enc, r.supervisor())
 	irunner, err := interp.New(
 		interp.Env(env),
-		interp.Dir(scratch),
 		interp.StdIO(nil, r.ioWriter(1), r.ioWriter(2)),
 		interp.ExecHandlers(tr.execMiddleware),
 		interp.CallHandler(tr.callObserve),
@@ -212,7 +329,10 @@ func (r *runner) runSubprocess(ctx context.Context, rf *runnerproto.RunFrame, sc
 	// ctx (cancelled by the wall-clock timeout OR an in-band signal frame, via the
 	// cancel runStep registered) tears the subprocess group down (U4).
 	cmd := exec.Command(rf.Entrypoint) // LookPath resolves the entrypoint; ctx-kill is the supervisor's job
-	cmd.Dir = scratch
+	// CWD parity (#4): leave cmd.Dir empty so the subprocess inherits the runner
+	// process's working dir (the remote ssh login dir), matching the legacy path;
+	// scratch only holds the runner-owned $OUTPUT (absolute path via env OUTPUT)
+	// and staged file frames (referenced by absolute path).
 	cmd.Env = buildStepEnv(rf.Env, outputPath, os.LookupEnv) // SAME closed allowlist (decision #17)
 	cmd.Stdin = bytes.NewReader(rf.Program)
 	// Child stdout/stderr are re-framed into io frames; the real protocol fd 1 is
@@ -312,6 +432,28 @@ func collectOutput(outputPath string) map[string]string {
 // a body identically to how it was screened.
 func interpParser() *syntax.Parser {
 	return syntax.NewParser(syntax.KeepComments(true), syntax.Variant(syntax.LangBash))
+}
+
+// hasBackgroundStmt reports whether the parsed body contains any backgrounded
+// statement (the `&` operator, syntax.Stmt.Background). It walks the whole tree so
+// a `&` nested inside a function body, subshell, loop, or conditional is caught,
+// since interp backgrounds those the same way — each spawns the un-joined goroutine
+// whose process group can register after interp.Run returns. Detection is static
+// (parse-time), so it is set regardless of the runtime goroutine timing that makes
+// the pgid itself register late.
+func hasBackgroundStmt(prog *syntax.File) bool {
+	found := false
+	syntax.Walk(prog, func(node syntax.Node) bool {
+		if found {
+			return false // already decided; stop descending
+		}
+		if st, ok := node.(*syntax.Stmt); ok && st.Background {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
 }
 
 // recoverInterpPanic is deferred around interp.Run: an upstream panic (#2429

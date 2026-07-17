@@ -28,8 +28,12 @@ type hostSim struct {
 	// uname is the "<sysname> <machine>" the smoke test reports; "" ⇒ Linux x86_64.
 	uname string
 
-	// versionSeq is consumed one entry per `--version` call (true ⇒ HIT/pass);
-	// exhausted ⇒ miss.
+	// versionSeq scripts the "is the on-disk binary the one we want" checks, in
+	// order: the FIRST entry answers the warm-hit cached-digest probe
+	// (cachedDigestCmd — true ⇒ digest matches, a warm HIT with no push), and each
+	// SUBSEQUENT entry answers a post-push exec-test (`--version`). Exhausted ⇒
+	// miss/fail. Authoring convention is unchanged from the pre-digest-check flow:
+	// entry[0] is the probe result, later entries are exec-tests.
 	versionSeq []bool
 	// pushSeq is consumed one entry per push; exhausted ⇒ a clean matching push.
 	pushSeq []pushSim
@@ -59,6 +63,11 @@ func cmdKind(cmd string) string {
 		return "version"
 	case strings.Contains(cmd, "SHELLKIT_PUSH_OK"):
 		return "push"
+	// The warm-hit digest check (cachedDigestCmd) prints SHELLKIT_DIGEST like a
+	// push does, but reads a cached file (`[ -f`) instead of committing one — so
+	// it is classified before the generic SHELLKIT_DIGEST/push fallthrough.
+	case strings.Contains(cmd, "SHELLKIT_DIGEST=") && strings.Contains(cmd, "[ -f "):
+		return "cacheddigest"
 	default:
 		return "unknown"
 	}
@@ -84,6 +93,15 @@ func (h *hostSim) run(_ context.Context, srv *inventory.Server, cmd string, stdi
 			uname = "Linux x86_64"
 		}
 		return execResult{Stdout: []byte("SHELLKIT_UNAME=" + uname + "\nSHELLKIT_ROOT_OK\n")}
+	case "cacheddigest":
+		// The warm-hit trust check: on a scripted HIT, echo the daemon's own
+		// wanted digest back (a byte-exact match); on a miss, echo a bad digest so
+		// the daemon treats the cache as untrusted and re-pushes.
+		want := digestFromCachedCmd(cmd)
+		if h.popVersion() {
+			return execResult{Stdout: []byte("SHELLKIT_DIGEST=" + want + "\n")}
+		}
+		return execResult{Stdout: []byte("SHELLKIT_DIGEST=cafebabe0000\n")}
 	case "version":
 		if h.popVersion() {
 			return execResult{Stdout: []byte("shellkit-runner " + RunnerVersion + "\n")}
@@ -148,6 +166,36 @@ func (h *hostSim) callsOf(kind string) []simCall {
 	return out
 }
 
+// digestFromCachedCmd computes the sha256 the daemon expects for the cached
+// binary named in a cachedDigestCmd. The command sets `p="<root>/runner-<ver>-
+// <goos>-<goarch>"`; the fake parses the goos/goarch off the path, decompresses
+// the embedded binary for that platform, and returns its sha256 so a scripted
+// warm HIT echoes a byte-exact match.
+func digestFromCachedCmd(cmd string) string {
+	p := extractShellVar(cmd, "p")
+	// p is ".../runner-<ver>-<goos>-<goarch>"; take the last two dash fields.
+	base := p
+	if i := strings.LastIndex(base, "/"); i >= 0 {
+		base = base[i+1:]
+	}
+	fields := strings.Split(base, "-")
+	if len(fields) < 2 {
+		return ""
+	}
+	goos := fields[len(fields)-2]
+	goarch := fields[len(fields)-1]
+	gz, err := RunnerGz(goos, goarch)
+	if err != nil {
+		return ""
+	}
+	raw, err := gunzip(gz)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+
 // extractShellVar pulls the value of a `name="<value>"` assignment from a
 // generated command (used to read the daemon's wanted digest out of pushCmd).
 func extractShellVar(cmd, name string) string {
@@ -188,7 +236,7 @@ func wantLinuxAmd64Path() string {
 func TestBootstrap_WarmHitReturnsPath(t *testing.T) {
 	sim := &hostSim{t: t, versionSeq: []bool{true}}
 	b := newTestBootstrapper(sim, io.Discard)
-	srv := testServer("zt-lax")
+	srv := testServer("host-a")
 
 	res := b.Bootstrap(context.Background(), srv)
 	if res.Fallback {
@@ -206,7 +254,7 @@ func TestBootstrap_MissPushesThenReturnsPath(t *testing.T) {
 	sim := &hostSim{t: t, versionSeq: []bool{false, true}} // probe miss, exec-test hit
 	b := newTestBootstrapper(sim, io.Discard)
 
-	res := b.Bootstrap(context.Background(), testServer("lazybox-svc"))
+	res := b.Bootstrap(context.Background(), testServer("host-b"))
 	if res.Fallback {
 		t.Fatalf("miss→push→hit should succeed, got fallback: %s", res.Reason)
 	}
@@ -231,6 +279,54 @@ func TestBootstrap_MissPushesThenReturnsPath(t *testing.T) {
 	sum := sha256.Sum256(raw)
 	if got := extractShellVar(pushes[0].cmd, "want"); got != hex.EncodeToString(sum[:]) {
 		t.Errorf("push digest want=%q, expected sha256 of pushed bytes %q", got, hex.EncodeToString(sum[:]))
+	}
+}
+
+// TestBootstrap_WarmHitVerifiesDigestNotVersion pins the security fix: a warm hit
+// is trusted ONLY on a byte-exact digest match, and the trust check reads the
+// cached binary's sha256 (cachedDigestCmd) — it never trusts a --version string.
+func TestBootstrap_WarmHitVerifiesDigestNotVersion(t *testing.T) {
+	sim := &hostSim{t: t, versionSeq: []bool{true}} // cached-digest probe matches
+	b := newTestBootstrapper(sim, io.Discard)
+
+	res := b.Bootstrap(context.Background(), testServer("warm"))
+	if res.Fallback {
+		t.Fatalf("digest-matched warm hit → fallback: %+v", res)
+	}
+	if res.RunnerPath != wantLinuxAmd64Path() {
+		t.Errorf("RunnerPath = %q, want %q", res.RunnerPath, wantLinuxAmd64Path())
+	}
+	if n := len(sim.callsOf("cacheddigest")); n != 1 {
+		t.Errorf("cacheddigest calls = %d, want 1 (warm hit must verify the digest)", n)
+	}
+	if n := len(sim.callsOf("version")); n != 0 {
+		t.Errorf("version calls = %d, want 0 (warm hit must not trust --version)", n)
+	}
+	if n := len(sim.callsOf("push")); n != 0 {
+		t.Errorf("push calls = %d, want 0 (digest match ⇒ no push)", n)
+	}
+}
+
+// TestBootstrap_WarmHitWrongDigestRepushes proves a version-spoofing plant is
+// rejected: a binary sits at the predictable path but its digest does NOT match
+// the daemon's embedded bytes (the attack #8 describes), so bootstrap treats it
+// as untrusted, re-pushes the real bytes, and exec-tests the pushed binary.
+func TestBootstrap_WarmHitWrongDigestRepushes(t *testing.T) {
+	sim := &hostSim{t: t, versionSeq: []bool{false, true}} // cached-digest miss, post-push exec-test hit
+	b := newTestBootstrapper(sim, io.Discard)
+
+	res := b.Bootstrap(context.Background(), testServer("planted"))
+	if res.Fallback {
+		t.Fatalf("wrong-digest cache should re-push and succeed, got fallback: %s", res.Reason)
+	}
+	if res.RunnerPath != wantLinuxAmd64Path() {
+		t.Errorf("RunnerPath = %q, want %q", res.RunnerPath, wantLinuxAmd64Path())
+	}
+	if n := len(sim.callsOf("cacheddigest")); n != 1 {
+		t.Errorf("cacheddigest calls = %d, want 1", n)
+	}
+	if n := len(sim.callsOf("push")); n != 1 {
+		t.Errorf("push calls = %d, want 1 (untrusted cache ⇒ re-push the real bytes)", n)
 	}
 }
 

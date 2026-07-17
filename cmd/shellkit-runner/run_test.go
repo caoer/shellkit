@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -193,6 +194,249 @@ func TestRunInterp_EnvClosed(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "leak=[]") {
 		t.Fatalf("SSHPASS leaked into step: stdout = %q", stdout.String())
+	}
+}
+
+// TestRunInterp_InheritsProcessCWD is the CWD-parity assertion (#4): the interp
+// body must run in the runner PROCESS's inherited working directory (the remote
+// login dir), NOT the ephemeral scratch dir. It chdirs the test process to a
+// known dir, runs `pwd`, and asserts the reported cwd is that dir — never scratch
+// — so `cat .env` / `./deploy.sh` / relative paths behave as under legacy bash.
+func TestRunInterp_InheritsProcessCWD(t *testing.T) {
+	loginDir := t.TempDir()
+	// os.MkdirTemp can hand back a /var symlink to /private/var on macOS; resolve
+	// both sides so the comparison is against the same canonical path pwd reports.
+	loginDir, err := filepath.EvalSymlinks(loginDir)
+	if err != nil {
+		t.Fatalf("evalsymlinks login dir: %v", err)
+	}
+	chdir(t, loginDir)
+
+	scratch := t.TempDir()
+	outputPath := filepath.Join(scratch, outputFileName)
+	writeFile(t, outputPath, "")
+
+	var buf bytes.Buffer
+	r := &runner{enc: runnerproto.NewEncoder(&buf), errOut: &buf}
+	rf := &runnerproto.RunFrame{Program: []byte("pwd\n")}
+
+	if code, runErr := r.runInterp(context.Background(), rf, scratch, outputPath); runErr != "" || code != 0 {
+		t.Fatalf("run failed: code=%d err=%q", code, runErr)
+	}
+	got := strings.TrimSpace(stdoutOf(t, &buf))
+	if got != loginDir {
+		t.Fatalf("interp cwd = %q, want inherited login dir %q (scratch was %q)", got, loginDir, scratch)
+	}
+	if got == scratch {
+		t.Fatalf("interp ran in scratch %q — CWD parity lost", scratch)
+	}
+}
+
+// TestCapOutputs_UnderCap leaves small $OUTPUT sets untouched (no truncation, no
+// diagnostic).
+func TestCapOutputs_UnderCap(t *testing.T) {
+	vals := map[string]string{"a": "1", "b": strings.Repeat("x", 1000)}
+	note := capOutputs(vals)
+	if note != "" {
+		t.Fatalf("small outputs were capped: %q", note)
+	}
+	if vals["b"] != strings.Repeat("x", 1000) {
+		t.Fatalf("small value mutated: len=%d", len(vals["b"]))
+	}
+}
+
+// TestCapOutputs_TruncatesOversized proves an oversized $OUTPUT value is
+// truncated (with the marker) so the aggregate stays under the cap, the key is
+// NEVER dropped, and a diagnostic note is returned.
+func TestCapOutputs_TruncatesOversized(t *testing.T) {
+	huge := strings.Repeat("A", 2*maxOutputAggregateBytes)
+	vals := map[string]string{"big": huge, "small": "keep"}
+	note := capOutputs(vals)
+	if note == "" {
+		t.Fatalf("oversized output was not reported")
+	}
+	if _, ok := vals["big"]; !ok {
+		t.Fatalf("oversized key was dropped instead of truncated")
+	}
+	if _, ok := vals["small"]; !ok {
+		t.Fatalf("second key was dropped")
+	}
+	if !strings.HasSuffix(vals["big"], outputTruncatedMarker) {
+		t.Fatalf("truncated value missing marker: tail=%q", tail(vals["big"], 40))
+	}
+	// The property that matters (#1a): the serialized output frame must stay under
+	// MaxLineBytes so the peer decoder accepts it. Encode the capped frame and check
+	// its on-wire length (JSON-escaped values included).
+	var line bytes.Buffer
+	if err := runnerproto.NewEncoder(&line).Encode(runnerproto.Frame{
+		Type:   runnerproto.FrameOutput,
+		Output: &runnerproto.OutputFrame{Values: vals},
+	}); err != nil {
+		t.Fatalf("encode capped output frame: %v", err)
+	}
+	if line.Len() >= runnerproto.MaxLineBytes {
+		t.Fatalf("capped output frame line = %d bytes, want < MaxLineBytes (%d)", line.Len(), runnerproto.MaxLineBytes)
+	}
+}
+
+// TestHandleRun_HugeOutputRoundTrips is the #1a regression proof: a body writing
+// a >1 MiB $OUTPUT value round-trips to the step's REAL exit code through the
+// full frame loop — the output frame is truncated under MaxLineBytes, decoded
+// cleanly by the peer, and the result frame reports the real exit, not a protocol
+// failure surfaced as exit -1.
+func TestHandleRun_HugeOutputRoundTrips(t *testing.T) {
+	// 2 MiB single value, well over MaxLineBytes; the body exits 3.
+	body := "yes A | head -c 2097152 | tr -d '\\n' | sed 's/^/big=/' > \"$OUTPUT\"\nexit 3\n"
+	runFrame := runnerproto.Frame{
+		Type: runnerproto.FrameRun,
+		Run:  &runnerproto.RunFrame{Program: []byte(body)},
+	}
+	in := bytes.NewReader(encodeFrames(t, daemonHello(), runFrame))
+	var out, errOut bytes.Buffer
+	if err := run(in, &out, &errOut); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	// The peer decoder must accept every frame (no ErrProtocol on an oversized
+	// output line) — decodeFrames stops at the first decode error, so a rejected
+	// output frame would drop the trailing result frame.
+	frames := decodeFrames(t, &out)
+	var sawOutput, sawResult bool
+	var exit int
+	var bigVal string
+	for _, f := range frames {
+		switch f.Type {
+		case runnerproto.FrameOutput:
+			sawOutput = true
+			bigVal = f.Output.Values["big"]
+		case runnerproto.FrameResult:
+			sawResult = true
+			exit = f.Result.Exit
+		}
+	}
+	if !sawResult {
+		t.Fatalf("no result frame — oversized output frame was likely rejected as a protocol error")
+	}
+	if exit != 3 {
+		t.Fatalf("exit = %d, want 3 (the real step exit, not a protocol -1)", exit)
+	}
+	if !sawOutput {
+		t.Fatalf("no output frame emitted")
+	}
+	if !strings.HasSuffix(bigVal, outputTruncatedMarker) {
+		t.Fatalf("huge output was not truncated with the marker: len=%d tail=%q", len(bigVal), tail(bigVal, 40))
+	}
+	// And the diagnostic landed on the self-diagnostics channel, never a frame.
+	if !strings.Contains(errOut.String(), "$OUTPUT exceeded") {
+		t.Fatalf("expected a truncation diagnostic on stderr, got %q", errOut.String())
+	}
+}
+
+// TestHandleRun_OutputCreateFailure proves #13: when $OUTPUT cannot be created,
+// the step is reported as a FAILED result BEFORE the body runs — never a silent
+// exit-0-with-empty-output. Scratch is forced to a path where create fails.
+func TestHandleRun_OutputCreateFailure(t *testing.T) {
+	// Point scratch at a regular file so filepath.Join(scratch, name) can't be
+	// created (ENOTDIR).
+	notADir := filepath.Join(t.TempDir(), "iamafile")
+	writeFile(t, notADir, "x")
+
+	var buf bytes.Buffer
+	r := &runner{enc: runnerproto.NewEncoder(&buf), errOut: &buf, scratch: notADir}
+	// A body whose LAST command exits 0 — the trap the bug set: without the guard
+	// this would report success while the declared output silently vanished.
+	rf := &runnerproto.RunFrame{Program: []byte("true\n")}
+
+	if err := r.handleRun(context.Background(), rf); err != nil {
+		t.Fatalf("handleRun: %v", err)
+	}
+	frames := decodeFrames(t, &buf)
+	var res *runnerproto.ResultFrame
+	for _, f := range frames {
+		if f.Type == runnerproto.FrameResult {
+			res = f.Result
+		}
+	}
+	if res == nil {
+		t.Fatalf("no result frame emitted")
+	}
+	if res.Exit == 0 || res.Error == "" {
+		t.Fatalf("create failure reported as success: exit=%d error=%q", res.Exit, res.Error)
+	}
+	if !strings.Contains(res.Error, "$OUTPUT create failed") {
+		t.Fatalf("result error missing create-failure context: %q", res.Error)
+	}
+}
+
+// stdoutOf concatenates the fd-1 io frame payloads from a runner output buffer.
+func stdoutOf(t *testing.T, buf *bytes.Buffer) string {
+	t.Helper()
+	var sb strings.Builder
+	for _, f := range decodeFrames(t, buf) {
+		if f.Type == runnerproto.FrameIO && f.IO.FD == 1 {
+			b, _ := f.IO.Bytes()
+			sb.Write(b)
+		}
+	}
+	return sb.String()
+}
+
+// chdir changes the working dir for the test and restores it after (t.Chdir
+// exists in Go 1.24+, but restore-on-cleanup is spelled out here to stay
+// toolchain-agnostic).
+func chdir(t *testing.T, dir string) {
+	t.Helper()
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir %s: %v", dir, err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(old) })
+}
+
+// tail returns the last n bytes of s for compact failure messages.
+func tail(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[len(s)-n:]
+}
+
+// TestHasBackgroundStmt locks the static background-detection contract that gates
+// the run-exit reap: a `&` anywhere in the body (top-level or nested inside a
+// function, subshell, loop, or conditional — interp backgrounds all of them via an
+// un-joined goroutine) must be detected, while a body with no `&` must not be. A
+// false negative would let a late-registering orphan leak; a false positive only
+// costs a bounded reap poll on a step that never backgrounds.
+func TestHasBackgroundStmt(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{"top-level bg", "sleep 30 &\n", true},
+		{"bg no wait after fg", "echo hi\nsleep 30 &\n", true},
+		{"bg inside function", "f() { sleep 30 & }\nf\n", true},
+		{"bg inside subshell", "( sleep 30 & )\n", true},
+		{"bg inside loop", "for i in 1 2 3; do sleep 30 & done\n", true},
+		{"bg inside if", "if true; then sleep 30 & fi\n", true},
+		{"no bg simple", "echo hi\nsleep 1\n", false},
+		{"ampersand in string literal", "echo 'a & b'\n", false},
+		{"logical and not bg", "true && echo ok\n", false},
+		{"empty body", "\n", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			prog, err := interpParser().Parse(strings.NewReader(tc.body), "")
+			if err != nil {
+				t.Fatalf("parse %q: %v", tc.body, err)
+			}
+			if got := hasBackgroundStmt(prog); got != tc.want {
+				t.Fatalf("hasBackgroundStmt(%q) = %v, want %v", tc.body, got, tc.want)
+			}
+		})
 	}
 }
 

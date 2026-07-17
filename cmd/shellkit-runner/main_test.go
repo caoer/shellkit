@@ -143,17 +143,21 @@ func TestRun_SimpleBody(t *testing.T) {
 	}
 }
 
-// TestRun_FileFrameStagedThenReferenced stages a file, then runs a body that
-// reads it back — proving file frame + run share one scratch dir and the body
-// runs with scratch as its cwd.
-func TestRun_FileFrameStagedThenReferenced(t *testing.T) {
+// TestRun_FileFrameStagedIntoScratch stages a file, then runs a body that reads
+// it back BY ABSOLUTE PATH from the scratch dir named by $OUTPUT's parent —
+// proving file frame + run share one scratch dir. After the CWD-parity fix (#4)
+// the body no longer runs FROM scratch (it inherits the runner's login dir), so a
+// staged file is addressed by its absolute path, not a bare relative name.
+func TestRun_FileFrameStagedIntoScratch(t *testing.T) {
 	fileFrame := runnerproto.Frame{
 		Type: runnerproto.FrameFile,
 		File: &runnerproto.FileFrame{Name: "staged.txt", Data: []byte("payload-123")},
 	}
+	// $OUTPUT is <scratch>/.shellkit-output, so $(dirname "$OUTPUT")/staged.txt is
+	// the staged file's absolute path regardless of the body's cwd.
 	runFrame := runnerproto.Frame{
 		Type: runnerproto.FrameRun,
-		Run:  &runnerproto.RunFrame{Program: []byte("cat staged.txt")},
+		Run:  &runnerproto.RunFrame{Program: []byte(`cat "$(dirname "$OUTPUT")/staged.txt"`)},
 	}
 	in := bytes.NewReader(encodeFrames(t, daemonHello(), fileFrame, runFrame))
 	var out, errOut bytes.Buffer
@@ -168,7 +172,7 @@ func TestRun_FileFrameStagedThenReferenced(t *testing.T) {
 		}
 	}
 	if !strings.Contains(stdout.String(), "payload-123") {
-		t.Fatalf("staged file not readable by body: stdout = %q", stdout.String())
+		t.Fatalf("staged file not readable by body via absolute path: stdout = %q", stdout.String())
 	}
 }
 

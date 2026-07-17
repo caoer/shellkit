@@ -30,6 +30,12 @@ func detectGaps(file *syntax.File) Verdict {
 	// Track nested pipe stages so a pipeline's last stage is screened exactly once.
 	coveredPipes := map[*syntax.BinaryCmd]bool{}
 
+	// Pre-pass: collect every function name declared in this file. A pipeline whose
+	// final stage calls one of these runs in-process under interp (its mutations
+	// leak into the parent) but is subshell-isolated by bash — so a function final
+	// stage must route to realbash, exactly like an in-process builtin.
+	localFuncs := collectFuncNames(file)
+
 	add := func(prio int, format string, args ...any) {
 		findings = append(findings, finding{prio, fmt.Sprintf(format, args...)})
 	}
@@ -67,7 +73,7 @@ func detectGaps(file *syntax.File) Verdict {
 		case *syntax.BinaryCmd:
 			if (x.Op == syntax.Pipe || x.Op == syntax.PipeAll) && !coveredPipes[x] {
 				markNestedPipes(x, coveredPipes)
-				if reason := pipelineLastStageMutating(x.Y); reason != "" {
+				if reason := pipelineFinalStageNeedsRealbash(x.Y, localFuncs); reason != "" {
 					add(prioPipeMutate, "%s", reason)
 				}
 			}
@@ -83,7 +89,13 @@ func detectGaps(file *syntax.File) Verdict {
 		case *syntax.ParamExp:
 			// $$ / $! in a word: $$ collides across concurrent runners and $! is
 			// a synthetic "gN" under interp (useless as a real PID). (class B)
-			if x.Param != nil && x.Short {
+			// Both the short forms ($$, $!) and the brace forms (${$}, ${!}) are
+			// ParamExp with Param.Value "$"/"!"; the brace form has Short=false, so
+			// do NOT guard on x.Short here or it slips past. Exclude indirect
+			// expansion (${!name}, Excl=true → Param.Value is the referenced name,
+			// not "!") and the length op (${#$}, which exposes only a digit count,
+			// not the colliding pid value).
+			if x.Param != nil && !x.Excl && !x.Length {
 				switch x.Param.Value {
 				case "$":
 					add(prioProcParam, "`$$` (process id) is used in a word — interp's value collides across concurrent steps; running under real bash")
@@ -169,10 +181,46 @@ var shoptSupported = map[string]bool{
 	"globstar": true, "nocaseglob": true, "nullglob": true,
 }
 
-// pipelineMutatingBuiltins mutate shell state; as a pipeline's LAST stage they
-// leak that state into the parent under interp (bash isolates them in a subshell).
-var pipelineMutatingBuiltins = map[string]bool{
-	"cd": true, "read": true, "set": true, "shopt": true, "export": true,
+// inProcessBuiltins is the comprehensive set of shell builtins and keywords that
+// run IN THE CURRENT PROCESS (union of bash builtins, bash keywords, and the
+// builtins mvdan/sh implements). It is the allowlist gate for a pipeline's final
+// stage: bash runs every pipeline stage — including the last — in a subshell, so
+// an in-process command's mutations to parent state (cwd, vars, arrays, env) are
+// DISCARDED there; mvdan/sh does NOT isolate the final stage, so those mutations
+// LEAK into the parent (silent, exit-0, wrong result). The dispatch wrappers
+// `command`/`builtin`/`source`/`.` and `eval` are deliberately included so that
+// `command cd`, `builtin cd`, `source x`, `. x`, and `eval …` all route to
+// realbash — they can reach a mutating builtin or arbitrary code the static scan
+// cannot name. Over-including a harmless one (e.g. echo/printf/true) is SAFE: it
+// only makes the screen coarser, never wrong, because a pipeline ending in a pure
+// external command is the only case we let through to interp.
+var inProcessBuiltins = map[string]bool{
+	// dispatch wrappers + arbitrary-code entrypoints
+	".": true, "source": true, "eval": true, "exec": true,
+	"command": true, "builtin": true,
+	// directory / state mutation
+	"cd": true, "pushd": true, "popd": true, "dirs": true,
+	// input / array assignment
+	"read": true, "readarray": true, "mapfile": true,
+	// variable / option mutation
+	"unset": true, "set": true, "shopt": true, "export": true,
+	"local": true, "declare": true, "typeset": true, "let": true,
+	"readonly": true, "getopts": true,
+	// output / test builtins (harmless to over-screen, kept for completeness)
+	"printf": true, "echo": true, "test": true, "[": true,
+	// keywords that run in-process
+	"[[": true, "true": true, "false": true, ":": true,
+	// signal / job / process builtins
+	"trap": true, "wait": true, "jobs": true, "fg": true, "bg": true,
+	"kill": true, "ulimit": true, "umask": true, "disown": true,
+	"suspend": true, "times": true, "caller": true,
+	// alias / hash / type introspection
+	"alias": true, "unalias": true, "hash": true, "type": true,
+	"enable": true, "bind": true, "compgen": true, "complete": true,
+	"history": true, "fc": true,
+	// control-flow keywords / builtins
+	"return": true, "break": true, "continue": true, "shift": true,
+	"exit": true, "logout": true,
 }
 
 // inspectCall runs the class-A per-command detectors on a simple command.
@@ -208,6 +256,15 @@ func inspectCall(c *syntax.CallExpr, add func(int, string, ...any)) {
 		add(prioUlimit, "`ulimit` is not implemented by interp; running under real bash")
 
 	case "printf":
+		// interp v3.13.1 does not implement `printf -v var` — it treats `-v` as a
+		// literal format argument (prints it, never assigns). Screen it before the
+		// format-verb scan.
+		for _, f := range flagLetters(rest) {
+			if f == 'v' {
+				add(prioPrintf, "`printf -v` (assign to a variable) is unsupported by interp — it treats `-v` as a literal and never assigns; running under real bash")
+				break
+			}
+		}
 		if len(rest) > 0 {
 			if verb := printfGapVerb(staticText(rest[0])); verb != "" {
 				add(prioPrintf, "`printf` format uses %s — unsupported by interp; running under real bash", verb)
@@ -257,7 +314,10 @@ func inspectCall(c *syntax.CallExpr, add func(int, string, ...any)) {
 	case "mapfile", "readarray":
 		for _, f := range flagLetters(rest) {
 			if f != 't' && f != 'd' {
+				// One finding per call: extra unsupported flags would only append
+				// duplicate realbash reasons with no effect on the verdict.
 				add(prioMapfile, "`%s -%c` is unsupported by interp (only -t -d); running under real bash", name, f)
+				break
 			}
 		}
 
@@ -354,23 +414,94 @@ func declAssignsIFS(d *syntax.DeclClause) bool {
 	return false
 }
 
-// pipelineLastStageMutating returns a reason if the pipeline's last stage runs a
-// state-mutating builtin or declaration.
-func pipelineLastStageMutating(stage *syntax.Stmt) string {
-	switch c := stage.Cmd.(type) {
-	case *syntax.CallExpr:
-		if len(c.Args) > 0 {
-			name := c.Args[0].Lit()
-			if pipelineMutatingBuiltins[name] {
-				return fmt.Sprintf("pipeline's final stage runs the state-mutating builtin `%s` — interp can leak its cwd/env into the parent (bash isolates it in a subshell); running under real bash", name)
+// pipelineFinalStageNeedsRealbash decides whether a multi-stage pipeline's FINAL
+// stage must run under real bash. It is an ALLOWLIST, not a denylist: bash runs
+// EVERY pipeline stage (including the last) in a SUBSHELL, so any mutation the
+// final stage makes to parent state (cwd, vars, arrays, env) is DISCARDED under
+// bash. mvdan/sh does NOT isolate the final stage, so those mutations LEAK into
+// the parent — a silent, exit-0, wrong-result divergence. The only final stage
+// that CANNOT diverge is a plain external command, which forks in both bash and
+// interp; everything else routes to realbash.
+//
+// It returns a realbash reason UNLESS ALL of these hold for the final stmt:
+//
+//  1. Cmd is a *syntax.CallExpr (a simple command) — never a compound
+//     (While/For/If/Case/Block/Subshell/ArithmCmd/…): a compound final stage
+//     mutates parent state under interp but is subshell-discarded by bash.
+//  2. it has at least one Arg — a bare assignment (`VAR=x` with no command) sets
+//     a parent variable under interp but is subshell-discarded by bash.
+//  3. the head Args[0] is a non-empty STATIC literal — a dynamic head
+//     (`$cmd`, cmdsubst) could resolve to a mutating builtin the scan can't name.
+//  4. the head is NOT an in-process builtin/keyword (inProcessBuiltins) — those
+//     run in the current process and leak; this also folds in the `command`/
+//     `builtin`/`source`/`.`/`eval` dispatch wrappers.
+//  5. the head is NOT a function declared in this file — a function final stage
+//     runs in-process and can mutate the parent.
+//
+// If all five hold the final stage is a provably-plain external command → SAFE
+// for interp (forks in both engines, no parent-state divergence).
+func pipelineFinalStageNeedsRealbash(stage *syntax.Stmt, localFuncs map[string]bool) string {
+	// Rule 1: compound (or otherwise non-simple) final stage -> realbash. Only a
+	// simple command (*syntax.CallExpr) can be a plain external command; every
+	// other Cmd type runs in-process and can leak parent state under interp.
+	c, ok := stage.Cmd.(*syntax.CallExpr)
+	if !ok {
+		switch fc := stage.Cmd.(type) {
+		case *syntax.DeclClause:
+			kw := "declaration"
+			if fc.Variant != nil && fc.Variant.Value != "" {
+				kw = "`" + fc.Variant.Value + "` declaration"
 			}
-		}
-	case *syntax.DeclClause:
-		if c.Variant != nil {
-			return fmt.Sprintf("pipeline's final stage is a `%s` declaration — interp can leak it into the parent; running under real bash", c.Variant.Value)
+			return fmt.Sprintf("pipeline's final stage is a %s — interp sets it in the parent, but bash discards it in a subshell; running under real bash", kw)
+		case *syntax.ArithmCmd:
+			return "pipeline's final stage is an arithmetic command `(( … ))` — interp mutates the parent's variables, but bash discards them in a subshell; running under real bash"
+		case *syntax.LetClause:
+			return "pipeline's final stage is a `let` arithmetic command — interp mutates the parent's variables, but bash discards them in a subshell; running under real bash"
+		default:
+			return "pipeline's final stage is a compound command (e.g. `while`/`for`/`if`/subshell) — bash runs it in a subshell so its mutations are discarded, but interp leaks them into the parent; running under real bash"
 		}
 	}
+	// Rule 2: bare assignment (no command word) -> realbash.
+	if len(c.Args) == 0 {
+		return "pipeline's final stage is a bare assignment (`VAR=…` with no command) — interp sets it in the parent, but bash discards it in a subshell; running under real bash"
+	}
+	// Rule 3: dynamic/non-literal command head -> realbash.
+	name := c.Args[0].Lit()
+	if name == "" {
+		return "pipeline's final stage has a dynamic command head (variable/expansion) — the static screen cannot prove it does not leak state into the parent (bash isolates it in a subshell); running under real bash"
+	}
+	// Rule 4: in-process builtin/keyword (incl. command/builtin/source/./eval) -> realbash.
+	if inProcessBuiltins[name] {
+		return fmt.Sprintf("pipeline's final stage runs the in-process builtin/keyword `%s` — interp leaks its cwd/env/vars into the parent (bash isolates it in a subshell so they are discarded); running under real bash", name)
+	}
+	// Rule 5: function defined in this file -> realbash.
+	if localFuncs[name] {
+		return fmt.Sprintf("pipeline's final stage calls the function `%s` — interp runs it in-process and leaks its mutations into the parent (bash isolates it in a subshell); running under real bash", name)
+	}
+	// All five hold: a plain external command. Forks in both engines -> no gap.
 	return ""
+}
+
+// collectFuncNames walks file once and returns the set of every function name it
+// declares (both POSIX `f()` and `function f` forms). Used by the pipeline
+// final-stage allowlist: a pipeline ending in a locally-defined function runs
+// in-process under interp and must route to realbash.
+func collectFuncNames(file *syntax.File) map[string]bool {
+	names := map[string]bool{}
+	syntax.Walk(file, func(n syntax.Node) bool {
+		if fd, ok := n.(*syntax.FuncDecl); ok {
+			if fd.Name != nil && fd.Name.Value != "" {
+				names[fd.Name.Value] = true
+			}
+			for _, nm := range fd.Names {
+				if nm != nil && nm.Value != "" {
+					names[nm.Value] = true
+				}
+			}
+		}
+		return true
+	})
+	return names
 }
 
 // markNestedPipes walks the left spine of a pipe chain, marking every nested pipe

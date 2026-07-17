@@ -29,7 +29,7 @@ Input: a step with `Trace: [{ElapsedSec:0,Command:"cat /etc/os-release"},
 {ElapsedSec:0,Command:"df -h /"}]`, `ShowTrace:true`, exit 0.
 
 ```
-=== deploy-check [zt-lax] exit:0 ===
+=== deploy-check [host-a] exit:0 ===
 output: /tmp/shellkit-mcp-xxxx/deploy-check.out (3 lines)
   status=ok
 command trace:
@@ -48,7 +48,7 @@ block at all (`mcp.go:307`: `if len(r.Trace) > 0 && (r.TimedOut || r.ShowTrace)`
 clean"):
 
 ```
-=== deploy-check [zt-lax] exit:0 ===
+=== deploy-check [host-a] exit:0 ===
 output: /tmp/shellkit-mcp-xxxx/deploy-check.out (3 lines)
   status=ok
 preview:
@@ -61,7 +61,7 @@ preview:
 Timeout case (`TestFormatResults_WithTimeout`, and T09.2):
 
 ```
-=== slow-step [zt-lax] exit:137 ===
+=== slow-step [host-a] exit:137 ===
 TIMED OUT (after 30s)
 command trace (timed out):
   +0s  echo starting
@@ -92,7 +92,7 @@ invisible, not just imprecise.
 `events.go:199-217`:
 
 ```
-executing (14s) step:deploy host:zt-lax
+executing (14s) step:deploy host:host-a
 > git pull --ff-only
 ---
 Cloning into 'app'...
@@ -175,7 +175,7 @@ builtins, `git pull` is external):
 
 ```
 ### deploy
-{"ssh": "zt-lax", "interp": true, "trace": true}
+{"ssh": "host-a", "interp": true, "trace": true}
 
 cd /srv/app
 git pull --ff-only
@@ -241,12 +241,12 @@ Rendered as a `note:` line right after the header — the same conditional-block
 `error:`/`stderr:` (new slot, least disruptive position; doesn't reorder or gate any existing
 line).
 
-Worked example — `check-nginx` fanned out to `["zt-lax", "lazybox-svc"]`, `zt-lax` warm on the
-runner, `lazybox-svc` bootstrap fails (`noexec` cache dir) and silently falls back:
+Worked example — `check-nginx` fanned out to `["host-a", "host-b"]`, `host-a` warm on the
+runner, `host-b` bootstrap fails (`noexec` cache dir) and silently falls back:
 
 ```
-=== check-nginx [zt-lax] exit:0 ===
-output: /tmp/shellkit-mcp-xxxx/check-nginx.zt-lax.out (2 lines)
+=== check-nginx [host-a] exit:0 ===
+output: /tmp/shellkit-mcp-xxxx/check-nginx.host-a.out (2 lines)
 command trace:
   +4µs    systemctl is-active nginx        (1.8ms)
   +1.9ms  echo "nginx: active" >> $OUTPUT   (4µs)
@@ -254,9 +254,9 @@ preview:
   nginx: active
 
 
-=== check-nginx [lazybox-svc] exit:0 ===
-note: runner bootstrap failed on lazybox-svc (noexec ~/.cache, /tmp also unavailable) — ran under legacy path
-output: /tmp/shellkit-mcp-xxxx/check-nginx.lazybox-svc.out (2 lines)
+=== check-nginx [host-b] exit:0 ===
+note: runner bootstrap failed on host-b (noexec ~/.cache, /tmp also unavailable) — ran under legacy path
+output: /tmp/shellkit-mcp-xxxx/check-nginx.host-b.out (2 lines)
 command trace:
   +0s  systemctl is-active nginx
   +0s  echo "nginx: active" >> $OUTPUT
@@ -267,10 +267,10 @@ preview:
 === check-nginx [local] exit:0 ===
 output: /tmp/shellkit-mcp-xxxx/check-nginx.out (5 lines)
 preview:
-  === zt-lax ===
+  === host-a ===
   nginx: active
   
-  === lazybox-svc ===
+  === host-b ===
   nginx: active
   
 
@@ -294,12 +294,12 @@ Proposed shape — same `executing (Ns) step:X host:Y` prefix agents already par
 **Phase 1 — cold-host bootstrap** (no run frame sent yet; nothing to execute):
 
 ```
-executing (1s) step:deploy host:lazybox-svc phase:bootstrap
+executing (1s) step:deploy host:host-b phase:bootstrap
 > pushing shellkit-runner (linux/amd64, 1.4MB, sha:9f2a1c8e)
 ```
 
 ```
-executing (2s) step:deploy host:lazybox-svc phase:bootstrap
+executing (2s) step:deploy host:host-b phase:bootstrap
 > verifying runner (exec-test: shellkit-runner --version)
 ```
 
@@ -310,7 +310,7 @@ a silent long-running command (no stdout) still produces visible progress from i
 completion event plus any commands that ran before it:
 
 ```
-executing (5s) step:deploy host:lazybox-svc phase:run
+executing (5s) step:deploy host:host-b phase:run
 > git pull --ff-only
 ---
 [trace] cd /srv/app  (8µs)
@@ -322,7 +322,7 @@ If bootstrap fails outright, the next tick shows the fallback explicitly instead
 switching format (matches the `note:` line the final result will carry, §2):
 
 ```
-executing (4s) step:deploy host:lazybox-svc phase:bootstrap-failed
+executing (4s) step:deploy host:host-b phase:bootstrap-failed
 > noexec ~/.cache, /tmp also unavailable — falling back to legacy path
 ```
 
@@ -398,10 +398,12 @@ error: step failed under interp: invalid signal specification "INT" for trap (in
 
 ### 5.3 Protocol/bootstrap notices (E&R rows, plan.md:241,247 — same `note:` slot)
 
-- Proto mismatch (stale runner binary):
-  `note: runner protocol mismatch on lazybox-svc (runner proto:1, daemon proto:2) — re-pushed current runner and retried once; still mismatched, ran under legacy path for this step.`
+- Proto/role/version mismatch (stale runner binary): the handshake is rejected and the step falls
+  back to legacy immediately (the daemon re-bootstraps the current runner on the next step, not
+  mid-step):
+  `note: runner protocol mismatch on host-b (runner proto:1, daemon proto:2) — ran under legacy path for this step.`
 - Bootstrap `noexec`/read-only home:
-  `note: runner bootstrap failed on lazybox-svc (noexec ~/.cache, /tmp also unavailable) — ran under legacy path for this step.`
+  `note: runner bootstrap failed on host-b (noexec ~/.cache, /tmp also unavailable) — ran under legacy path for this step.`
 - Darwin/arm64 unsigned binary (decision #18, plan.md:83):
   `note: runner exec-test failed on <host> (AMFI killed unsigned darwin/arm64 binary) — ran under legacy path for this step.`
 

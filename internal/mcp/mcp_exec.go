@@ -373,7 +373,14 @@ func (e *Executor) executeSSH(ctx context.Context, stepIdx int, step *Step) ([]S
 				}
 			}
 			if runnerRoute {
-				boot := e.bootstrapper.Bootstrap(ctx, srv)
+				// Bootstrap counts against the step timeout: a hung smoke-test /
+				// push / version-probe on a cold host must not block past the
+				// step's configured budget. Bound it with a step-scoped context;
+				// a timed-out bootstrap returns Fallback and we drop to legacy —
+				// bootstrap itself never step-fails.
+				bootCtx, cancelBoot := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+				boot := e.bootstrapper.Bootstrap(bootCtx, srv)
+				cancelBoot()
 				if boot.Fallback {
 					// Bootstrap fallback (U0 §5.3): no usable runner on this host.
 					routeNote = boot.Reason
@@ -541,12 +548,13 @@ func (e *Executor) writeStepOutput(result *StepResult, stepName, host string, fa
 // map the rundaemon.StepOutcome onto an mcp.StepResult (exit / $OUTPUT / trace /
 // stderr), preserving the timeout exit-137 and wire-cut exit -1 signatures.
 //
-// ranBody is false ONLY when the body provably never executed — a spawn failure
-// or a protocol-version mismatch caught at the handshake, before the run frame —
-// so the caller may safely fall back to the legacy path; the returned result then
-// carries just the RouteNote. Otherwise ranBody is true and the result is
-// authoritative, INCLUDING a wire-cut/protocol-error exit -1 (the body may have
-// run; re-running under legacy could double-apply a non-idempotent script).
+// ranBody is false ONLY when the body provably never executed — a spawn failure,
+// a handshake rejection (proto/role/version mismatch) before the run frame, or a
+// run/file frame refused as oversize before being sent — so the caller may safely
+// fall back to the legacy path; the returned result then carries just the
+// RouteNote. Otherwise ranBody is true and the result is authoritative, INCLUDING
+// a wire-cut/protocol-error exit -1 (the body may have run; re-running under
+// legacy could double-apply a non-idempotent script).
 func (e *Executor) runRunnerSSH(ctx context.Context, srv *inventory.Server, body, runnerPath string, stepIdx int, step *Step, host, entrypoint string, timeoutSec int) (StepResult, bool) {
 	// Same per-host connection-storm guard the legacy path applies before its
 	// exec (provider abuse detection); a saturated limiter falls back to legacy.
@@ -590,6 +598,10 @@ func (e *Executor) runRunnerSSH(ctx context.Context, srv *inventory.Server, body
 		Name:       step.Name,
 		Host:       host,
 		Entrypoint: runnerEntrypoint,
+		// Pin the handshake to the bootstrapped runner: bootstrap verified this
+		// binary's digest/version on-host, so a hello advertising any other
+		// version is a stale/wrong endpoint — reject it and fall back to legacy.
+		ExpectVersion: rundaemon.RunnerVersion,
 	})
 	_ = proc.Wait()
 
@@ -599,6 +611,13 @@ func (e *Executor) runRunnerSSH(ctx context.Context, srv *inventory.Server, body
 	}
 	if outcome.ProtoMismatch {
 		// Rejected at the handshake, before the run frame — the body never ran.
+		return StepResult{RouteNote: outcome.Error + " — ran under legacy path for this step"}, false
+	}
+	if outcome.UnsentOversize {
+		// The run/file frame exceeded the wire limit and was NEVER sent, so the
+		// body provably did not execute — fall back to legacy (which streams the
+		// body over ssh stdin with no per-line ceiling) rather than reporting a
+		// false exit -1.
 		return StepResult{RouteNote: outcome.Error + " — ran under legacy path for this step"}, false
 	}
 

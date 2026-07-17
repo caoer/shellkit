@@ -2,7 +2,7 @@
 type: mcp-test
 status: active
 created: 2026-07-16
-target: [zt-lax, lazybox-svc]
+target: [host-a, host-b]
 depends-on: [00-provision]
 tags: [type/mcp-test, domain/infra, domain/tooling]
 ---
@@ -14,8 +14,10 @@ Exercises the runner against real hosts through the MCP `ssh` tool. While the ru
 opt-in, every step here carries `"interp": true`; after the default-on flip, the same steps
 run without it and `"interp": false` forces the legacy path.
 
-Run each scenario on BOTH target hosts. First execution evidence (2026-07-16, zt-lax +
-lazybox-svc, runner version `2f658a034a51`): session dir
+Run each scenario on BOTH target hosts (`host-a`, `host-b` are synthetic placeholders —
+substitute your own two hosts per CONTRIBUTING.md's "never commit real infrastructure
+details"). First execution evidence (2026-07-16, two live linux hosts, runner version
+`<ver>`) lives in the session dir, not this repo:
 `16-17-shellkit-upgrade/ccc-compound/evidence/u9-live/`.
 
 ---
@@ -39,8 +41,8 @@ rerun):** no re-push, faster wall clock, `<runner> --version` inside the step pr
 daemon's `RunnerVersion`. Note: `phase:bootstrap` also covers ssh connect + hello handshake
 (~seconds on WAN), so warm steps may briefly show it — the push itself only happens cold.
 
-- [x] Pass (both hosts, 2026-07-16: cold pushed 3.7MB `runner-2f658a034a51-linux-amd64`;
-  warm reported `2f658a034a51` on-host)
+- [x] Pass (both hosts, 2026-07-16: cold pushed the ~3.7MB `runner-<ver>-linux-amd64`;
+  warm reported the same `<ver>` on-host)
 
 ---
 
@@ -87,7 +89,7 @@ echo mix-done
 without a duration suffix (CallHandler observes them but has no wait-status); offsets
 `+<t>` are ns-scaled, not `+0s`; the whole-step wall clock is consistent with the trace.
 
-- [x] Pass (zt-lax: `sleep 1.2 (1.204s)`; lazybox-svc: `(1.363s)`)
+- [x] Pass (host-a: `sleep 1.2 (1.204s)`; host-b: `(1.363s)`)
 
 ---
 
@@ -185,7 +187,7 @@ where this persists. Documented for U10.
 **DSL:**
 ```
 ### fanout
-{"ssh": ["zt-lax", "lazybox-svc"], "interp": true, "trace": true}
+{"ssh": ["host-a", "host-b"], "interp": true, "trace": true}
 
 echo "host=$(hostname)" >> $OUTPUT
 uname -r
@@ -203,7 +205,7 @@ rerun. Expected: that host renders
 legacy path` with a `+0s` legacy trace, while the other host keeps its ns runner trace;
 stdout identical on both; merged block unchanged. Restore by removing the three files.
 
-- [x] Pass (2026-07-16: zt-lax runner + lazybox-svc legacy in one call, exact U0 §2 shape)
+- [x] Pass (2026-07-16: host-a runner + host-b legacy in one call, exact U0 §2 shape)
 
 ---
 

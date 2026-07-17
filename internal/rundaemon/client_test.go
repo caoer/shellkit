@@ -22,6 +22,10 @@ type fakeRunner struct {
 	outW *io.PipeWriter
 
 	proto int // protocol version to advertise in the hello ack (0 → current)
+	// role and version override the hello ack for negative handshake tests. Empty
+	// role → RoleRunner; version is sent verbatim (default "testhash").
+	role    string
+	version string
 
 	mu         sync.Mutex
 	gotFiles   []runnerproto.FileFrame
@@ -64,11 +68,19 @@ func (f *fakeRunner) serve(t *testing.T, script func(run runnerproto.RunFrame)) 
 	if proto == 0 {
 		proto = runnerproto.ProtoVersion
 	}
+	role := f.role
+	if role == "" {
+		role = runnerproto.RoleRunner
+	}
+	version := f.version
+	if version == "" {
+		version = "testhash"
+	}
 	if err := f.enc.Encode(runnerproto.Frame{
 		Type: runnerproto.FrameHello,
 		Hello: &runnerproto.HelloFrame{
-			Proto: proto, Role: runnerproto.RoleRunner,
-			OS: "linux", Arch: "amd64", Version: "testhash",
+			Proto: proto, Role: role,
+			OS: "linux", Arch: "amd64", Version: version,
 		},
 	}); err != nil {
 		return // client aborted (e.g. proto mismatch closes the pipe)
@@ -169,7 +181,7 @@ func TestRunStep_HappyPath(t *testing.T) {
 
 	out, err := c.RunStep(context.Background(), Step{
 		Program: []byte("git pull --ff-only\n"),
-		Name:    "deploy", Host: "zt-lax",
+		Name:    "deploy", Host: "host-a",
 	})
 	if err != nil {
 		t.Fatalf("RunStep error: %v", err)
@@ -342,6 +354,72 @@ func TestRunStep_ProtoMismatch(t *testing.T) {
 	}
 }
 
+func TestRunStep_WrongRoleRejectedAtHandshake(t *testing.T) {
+	c, f := newFakeConn()
+	f.role = runnerproto.RoleDaemon // a non-runner endpoint on the same proto
+	go f.serve(t, func(run runnerproto.RunFrame) {
+		t.Errorf("run frame must not be sent to a wrong-role endpoint")
+	})
+
+	out, err := c.RunStep(context.Background(), Step{Program: []byte("x\n")})
+	if err != nil {
+		t.Fatalf("RunStep error: %v", err)
+	}
+	if !out.ProtoMismatch {
+		t.Errorf("ProtoMismatch = false, want true for a wrong-role hello")
+	}
+	if out.Exit != -1 {
+		t.Errorf("Exit = %d, want -1", out.Exit)
+	}
+	if !strings.Contains(out.Error, "role mismatch") {
+		t.Errorf("Error = %q, want a role-mismatch message", out.Error)
+	}
+}
+
+func TestRunStep_VersionMismatchRejectedAtHandshake(t *testing.T) {
+	c, f := newFakeConn()
+	f.version = "staleversion" // a stale runner binary, not the bootstrapped one
+	go f.serve(t, func(run runnerproto.RunFrame) {
+		t.Errorf("run frame must not be sent to a version-mismatched endpoint")
+	})
+
+	out, err := c.RunStep(context.Background(), Step{
+		Program:       []byte("x\n"),
+		ExpectVersion: "wanthash",
+	})
+	if err != nil {
+		t.Fatalf("RunStep error: %v", err)
+	}
+	if !out.ProtoMismatch {
+		t.Errorf("ProtoMismatch = false, want true for a version mismatch")
+	}
+	if !strings.Contains(out.Error, "version mismatch") {
+		t.Errorf("Error = %q, want a version-mismatch message", out.Error)
+	}
+}
+
+func TestRunStep_MatchingVersionAccepted(t *testing.T) {
+	c, f := newFakeConn()
+	f.version = "goodhash"
+	go f.serve(t, func(run runnerproto.RunFrame) {
+		f.emit(t, resultFrame(0, 1000, ""))
+	})
+
+	out, err := c.RunStep(context.Background(), Step{
+		Program:       []byte("ok\n"),
+		ExpectVersion: "goodhash",
+	})
+	if err != nil {
+		t.Fatalf("RunStep error: %v", err)
+	}
+	if out.ProtoMismatch {
+		t.Errorf("ProtoMismatch = true, want false for a matching version")
+	}
+	if out.Exit != 0 {
+		t.Errorf("Exit = %d, want 0", out.Exit)
+	}
+}
+
 func TestRunStep_UnexpectedFrameIsProtocolError(t *testing.T) {
 	c, f := newFakeConn()
 	go f.serve(t, func(run runnerproto.RunFrame) {
@@ -445,6 +523,93 @@ func TestRunStep_HandshakeWireCut(t *testing.T) {
 	}
 }
 
+func TestRunStep_OversizeRunFrameNotSentFallsBack(t *testing.T) {
+	c, f := newFakeConn()
+	sentRun := make(chan struct{}, 1)
+	go f.serve(t, func(run runnerproto.RunFrame) {
+		// The run frame must NEVER reach the runner — it's over the wire limit.
+		sentRun <- struct{}{}
+		f.emit(t, resultFrame(0, 1, ""))
+	})
+
+	// A body whose base64 RunFrame line exceeds MaxLineBytes (1 MiB). Raw bytes
+	// base64-inflate 4/3×, so 1 MiB of raw program comfortably overshoots.
+	big := make([]byte, runnerproto.MaxLineBytes)
+	for i := range big {
+		big[i] = 'a'
+	}
+	out, err := c.RunStep(context.Background(), Step{Program: big})
+	if err != nil {
+		t.Fatalf("RunStep error: %v", err)
+	}
+	if !out.UnsentOversize {
+		t.Errorf("UnsentOversize = false, want true for an over-limit run frame")
+	}
+	if out.Exit != -1 {
+		t.Errorf("Exit = %d, want -1", out.Exit)
+	}
+	if out.WireCut || out.ProtocolError {
+		t.Errorf("oversize must not read as wire cut / protocol error: %+v", out)
+	}
+	select {
+	case <-sentRun:
+		t.Errorf("an oversize run frame was sent to the runner; it must be withheld")
+	default:
+	}
+}
+
+func TestRunStep_OversizeFileFrameNotSentFallsBack(t *testing.T) {
+	c, f := newFakeConn()
+	go f.serve(t, func(run runnerproto.RunFrame) {
+		t.Errorf("run frame must not be sent when a prior file frame is oversize")
+	})
+
+	big := make([]byte, runnerproto.MaxLineBytes)
+	out, err := c.RunStep(context.Background(), Step{
+		Program: []byte("cat f\n"),
+		Files:   []FileStage{{Name: "f", Data: big}},
+	})
+	if err != nil {
+		t.Fatalf("RunStep error: %v", err)
+	}
+	if !out.UnsentOversize {
+		t.Errorf("UnsentOversize = false, want true for an over-limit file frame")
+	}
+	if len(f.files()) != 0 {
+		t.Errorf("an oversize file frame reached the runner; it must be withheld")
+	}
+}
+
+func TestRunStep_NilStdinIsMisuseError(t *testing.T) {
+	// stdout is a valid reader, stdin is nil: a caller-fixable misuse, surfaced as
+	// a non-nil error (never a panic, never an outcome).
+	c := NewClient(nil, strings.NewReader(""), nil)
+	_, err := c.RunStep(context.Background(), Step{Program: []byte("x\n")})
+	if err == nil || !strings.Contains(err.Error(), "nil stdin") {
+		t.Fatalf("nil stdin err = %v, want a nil-stdin misuse error", err)
+	}
+}
+
+func TestRunStep_NilStdoutIsMisuseErrorNotPanic(t *testing.T) {
+	// A nil stdout reader must return the documented misuse error, NOT panic in
+	// DecodeHello via the eofSpy over a nil reader (finding #18).
+	c := NewClient(nopWriteCloser{io.Discard}, nil, nil)
+	out, err := c.RunStep(context.Background(), Step{Program: []byte("x\n")})
+	if err == nil || !strings.Contains(err.Error(), "nil stdout") {
+		t.Fatalf("nil stdout err = %v, want a nil-stdout misuse error", err)
+	}
+	if out.Exit != 0 || out.WireCut || out.ProtocolError {
+		t.Errorf("misuse must return a zero outcome, got %+v", out)
+	}
+}
+
+// nopWriteCloser adapts an io.Writer to io.WriteCloser for the nil-stdout test
+// (Close is a no-op; RunStep closes stdin on the misuse path is not reached, but
+// the field must be a WriteCloser).
+type nopWriteCloser struct{ io.Writer }
+
+func (nopWriteCloser) Close() error { return nil }
+
 func TestProgressSummary_ReflectsLiveTrace(t *testing.T) {
 	c, f := newFakeConn()
 	release := make(chan struct{})
@@ -461,7 +626,7 @@ func TestProgressSummary_ReflectsLiveTrace(t *testing.T) {
 	var out StepOutcome
 	go func() {
 		out, _ = c.RunStep(context.Background(), Step{
-			Program: []byte("apt-get update\n"), Name: "deploy", Host: "lazybox-svc",
+			Program: []byte("apt-get update\n"), Name: "deploy", Host: "host-b",
 		})
 		close(finished)
 	}()
@@ -484,7 +649,7 @@ func TestProgressSummary_ReflectsLiveTrace(t *testing.T) {
 	if !strings.Contains(summary, "phase:run") {
 		t.Errorf("summary missing phase:run:\n%s", summary)
 	}
-	if !strings.Contains(summary, "step:deploy") || !strings.Contains(summary, "host:lazybox-svc") {
+	if !strings.Contains(summary, "step:deploy") || !strings.Contains(summary, "host:host-b") {
 		t.Errorf("summary missing step/host:\n%s", summary)
 	}
 	if !strings.Contains(summary, "> apt-get update") {

@@ -419,10 +419,16 @@ func TestRunner_DockerSSH(t *testing.T) {
 		if warm.countOf("push") != 0 {
 			t.Errorf("warm push count = %d, want 0 (must not re-push)", warm.countOf("push"))
 		}
-		if warm.countOf("version") == 0 {
-			t.Errorf("warm hit must run --version; version calls = 0")
+		// The warm hit is now digest-gated (security): it verifies the cached
+		// binary's remote sha256 against the daemon-computed digest, NOT its
+		// self-reported --version. A version-string match alone is forgeable.
+		if warm.countOf("cacheddigest") == 0 {
+			t.Errorf("warm hit must verify the cached binary's digest; cacheddigest calls = 0")
 		}
-		t.Logf("cold pushed, warm hit at %s with 0 re-push", r2.RunnerPath)
+		if warm.countOf("version") != 0 {
+			t.Errorf("warm hit must NOT trust --version; version calls = %d, want 0", warm.countOf("version"))
+		}
+		t.Logf("cold pushed, warm hit at %s with 0 re-push (digest-verified)", r2.RunnerPath)
 	})
 
 	// Scenario 3 — version-mismatch re-push + remote digest guard.

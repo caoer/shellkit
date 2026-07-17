@@ -219,7 +219,10 @@ func TestForge_FdSeparation(t *testing.T) {
 		},
 		runnerproto.Frame{
 			Type: runnerproto.FrameRun,
-			Run:  &runnerproto.RunFrame{Program: []byte("cat forge.json\n")},
+			// The staged file lives in scratch; after the CWD-parity fix (#4) the body
+			// runs from the runner's login dir, so address the staged file by its
+			// absolute path via $OUTPUT's parent, not a bare relative name.
+			Run: &runnerproto.RunFrame{Program: []byte(`cat "$(dirname "$OUTPUT")/forge.json"` + "\n")},
 		},
 	)
 

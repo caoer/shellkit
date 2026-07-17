@@ -50,10 +50,19 @@ func candidateRoots(srv *inventory.Server) []candidate {
 }
 
 // smokeTestCmd builds the write+chmod+exec probe for one candidate. It creates
-// the dir, writes a trivial script, chmod +x it, and EXECUTES it — the exec is
-// what detects a noexec mount (chmod succeeds, exec returns 126). On success it
-// prints the host platform (uname -s / -m) so the caller maps it to goos/goarch
-// in the same round trip. Distinct exit codes tag which step failed.
+// the dir with a private mode (umask 077 → 0700), writes a trivial script,
+// chmod +x it, and EXECUTES it — the exec is what detects a noexec mount (chmod
+// succeeds, exec returns 126). On success it prints the host platform
+// (uname -s / -m) so the caller maps it to goos/goarch in the same round trip.
+// Distinct exit codes tag which step failed.
+//
+// Security hardening (shared candidate roots /var/tmp, /dev/shm): a pre-existing
+// cache dir is only accepted when it is a real directory (not a symlink) owned by
+// the ssh user. A symlinked or foreign-owned dir at the predictable path is a
+// plant vector — reject it and fall through to the next candidate rather than
+// writing (and later execing) inside an attacker-controlled directory. Own dirs
+// are (re)tightened to 0700 so a lax pre-existing mode can't leave the runner
+// world-writable.
 func smokeTestCmd(c candidate) string {
 	guard := c.guard
 	if guard == "" {
@@ -63,7 +72,11 @@ func smokeTestCmd(c candidate) string {
 	return strings.Join([]string{
 		guard + ` || exit 10`,
 		`d="` + c.expr + `"`,
-		`mkdir -p "$d" 2>/dev/null || exit 11`,
+		`[ -h "$d" ] && exit 15`, // reject a symlinked cache root (plant vector)
+		`(umask 077; mkdir -p "$d") 2>/dev/null || exit 11`,
+		`[ -d "$d" ] && [ ! -h "$d" ] || exit 15`, // must be a real dir, not a symlink
+		`[ -O "$d" ] || exit 16`,                  // must be owned by the ssh user
+		`chmod 700 "$d" 2>/dev/null || exit 17`,   // tighten a lax pre-existing mode
 		`p="$d/.shellkit-probe.$$"`,
 		`printf '#!/bin/sh\nexit 0\n' > "$p" 2>/dev/null || exit 12`,
 		`chmod +x "$p" 2>/dev/null || exit 13`,
@@ -78,6 +91,25 @@ func smokeTestCmd(c candidate) string {
 // executable file so a missing binary reads as a clean miss, not a shell error.
 func versionCmd(path string) string {
 	return `[ -x "` + path + `" ] || exit 40; "` + path + `" --version 2>/dev/null`
+}
+
+// cachedDigestCmd computes the remote sha256 of the cached binary at path and
+// prints it as a `SHELLKIT_DIGEST=<hex>` line (parsed by parseDigest), so the
+// daemon can compare it to its own digest before trusting a warm-hit binary
+// (security: a version-string match is forgeable; a byte-exact digest is not).
+// A missing/unreadable path, or the absence of both sha256 tools, prints no
+// digest (or an empty one) — read by the daemon as a miss, forcing a re-push.
+// It must be a regular file, not a symlink: a symlinked cache path could redirect
+// the digest read (and later the exec) to attacker-controlled bytes.
+func cachedDigestCmd(path string) string {
+	return strings.Join([]string{
+		`p="` + path + `"`,
+		`[ -f "$p" ] || exit 41`,
+		`[ -h "$p" ] && exit 42`, // reject a symlinked cache entry
+		`got=$(sha256sum "$p" 2>/dev/null | cut -d" " -f1)`,
+		`[ -n "$got" ] || got=$(shasum -a 256 "$p" 2>/dev/null | cut -d" " -f1)`,
+		`printf 'SHELLKIT_DIGEST=%s\n' "$got"`,
+	}, "; ")
 }
 
 // pushCmd cats the runner bytes (on stdin) to a hidden dotname tmp under root,

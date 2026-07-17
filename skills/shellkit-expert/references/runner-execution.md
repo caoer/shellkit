@@ -37,7 +37,7 @@ sftp subsystem, no extra auth round-trip.
 - **noexec / read-only home** — if all four candidates fail the write+chmod+exec probe, the step
   falls back to legacy with one explicit diagnostic naming noexec/ro-home as the cause:
   ```
-  note: runner bootstrap failed on lazybox-svc (no writable+executable cache dir: ~/.cache,
+  note: runner bootstrap failed on host-b (no writable+executable cache dir: ~/.cache,
   $XDG_CACHE_HOME, /var/tmp, /dev/shm all unusable — noexec or read-only home) — ran under legacy path
   ```
   Bootstrap never step-fails outright over this — it always yields a usable fallback verdict.
@@ -70,9 +70,9 @@ left over: a `$$`/`$!` built dynamically in a way that evades the static scan (e
 could still collide under concurrent runner execution, the same evasion category as any
 dynamically-constructed gap construct.
 
-These aren't guesses — they were measured with a 39-script bash-vs-runner differential corpus that
+These aren't guesses — they were measured with a 43-script bash-vs-runner differential corpus that
 diffs every script's cwd/env/stdout/stderr/exit-code/files-touched against real bash on the same
-input. 15 scripts match strictly under the runner, 22 get statically screened to real bash, and
+input. 15 scripts match strictly under the runner, 26 get statically screened to real bash, and
 exactly these 2 classes are the corpus's accepted residual divergences — 0 unexplained. If a
 script's correctness depends on either idiom's exact bash semantics, add `"interp": false` to keep
 it on the legacy path.

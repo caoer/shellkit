@@ -75,7 +75,8 @@ scp ./app.tar.gz dev-nyc-2:/tmp/
 
 ## Two execution paths: runner vs legacy
 
-Every `ssh:`/`tmux:` step runs one of two ways:
+Every `ssh:` step runs one of two ways (the runner path is `ssh:`-only — `tmux:` steps always
+use the legacy real-bash path below, never the runner):
 
 - **The runner (mvdan/sh)** — a small Go binary pushed to the host once and cached there, that
   parses and interprets the script in-process. External commands (`git`, `systemctl`, `ssh`, ...)
@@ -97,11 +98,18 @@ Every `ssh:`/`tmux:` step runs one of two ways:
 
 **Current posture: opt-in.** A step needs `"interp": true` to engage the runner at all — omit the
 field (or set anything other than `true`) and the step runs the legacy path exactly as before. The
-runner has cleared its go/no-go gate (a 39-script bash-vs-runner differential corpus, 0 unexplained
+runner has cleared its go/no-go gate (a 43-script bash-vs-runner differential corpus, 0 unexplained
 divergences) and default-on for statically-screened bash scripts is designed and ready, but the
 flip to make it the default is a separate, deliberate step that hasn't landed — don't assume either
 posture from this doc alone; `runnerDefaultOn` in `internal/mcp/mcp_exec.go` is the live source of
 truth. Until it flips, add `"interp": true` per step to use the runner.
+
+**Environment contract (runner path).** A step run under the runner does **not** inherit the full
+remote login environment. It gets a fixed operational allowlist — `PATH HOME USER LOGNAME SHELL
+LANG LC_ALL LC_CTYPE TERM TZ` plus `OUTPUT` — and nothing else (a deliberate security boundary,
+so no forwarded agent socket or stray secret leaks into a fleet runner). The legacy path inherits
+the whole remote session env. If a script depends on some other remote-session variable, either
+export it inside the body or run that step with `"interp": false`.
 
 ### When a step falls back to legacy anyway
 
@@ -129,7 +137,7 @@ each surfaced as a `note:` line right after the step's header:
 3. **Bootstrap failure** — no usable runner binary on the host; see `references/runner-execution.md`
    for the cache chain and diagnostics. Falls back with a `note:` naming the cause, e.g.:
    ```
-   note: runner bootstrap failed on lazybox-svc (no writable+executable cache dir: ~/.cache,
+   note: runner bootstrap failed on host-b (no writable+executable cache dir: ~/.cache,
    $XDG_CACHE_HOME, /var/tmp, /dev/shm all unusable — noexec or read-only home) — ran under legacy path
    ```
 

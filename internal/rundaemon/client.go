@@ -2,6 +2,7 @@ package rundaemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -77,9 +78,17 @@ type StepOutcome struct {
 	// ProtocolError is true when an unparseable/oversized/mismatched frame was
 	// read after the handshake — kill the connection and fall back.
 	ProtocolError bool
-	// ProtoMismatch is true when the runner's hello advertised a different
-	// protocol version than the daemon speaks (re-push is U5's job).
+	// ProtoMismatch is true when the handshake was rejected before the run frame:
+	// the runner's hello advertised a different protocol version, a non-runner
+	// role, or a runner-binary version other than the bootstrapped one. All three
+	// mean the body NEVER ran, so mcp safely falls back to legacy (or re-pushes).
 	ProtoMismatch bool
+	// UnsentOversize is true when a run/file frame's encoded ndjson line would
+	// exceed runnerproto.MaxLineBytes, so the daemon refused to send it: the
+	// remote decoder would reject an oversized line as a protocol error, which
+	// would look like a false exit -1 for a body that NEVER executed. Like
+	// ProtoMismatch, this means the body never ran, so mcp falls back to legacy.
+	UnsentOversize bool
 }
 
 // FileStage is a prior {{step.output}} to stage into the runner's scratch dir
@@ -101,6 +110,12 @@ type Step struct {
 	// Entrypoint names a non-bash interpreter (python3, node…); empty runs the
 	// mvdan/sh interp engine.
 	Entrypoint string
+	// ExpectVersion is the runner-binary content-hash version bootstrap verified
+	// on this host. When non-empty, the handshake rejects a runner ack that
+	// advertises any other version (a stale endpoint / version skew), so the body
+	// never runs against a wrong binary. Empty skips the version check (tests that
+	// don't model versioning).
+	ExpectVersion string
 	// Timeout is the wall-clock step timeout; 0 means no timeout.
 	Timeout time.Duration
 	// Files are prior outputs to stage before the run frame.
@@ -185,6 +200,13 @@ func (c *Client) RunStep(ctx context.Context, step Step) (StepOutcome, error) {
 	if c.stdin == nil {
 		return StepOutcome{}, errors.New("rundaemon: nil stdin")
 	}
+	// A nil stdout reader would let the handshake's DecodeHello dereference a nil
+	// reader through the eofSpy and panic; report it as the documented misuse
+	// error (a non-nil error is reserved for caller-fixable misuse) before any
+	// frame is written. c.eof wraps the stdout reader; c.eof.r is that reader.
+	if c.eof == nil || c.eof.r == nil {
+		return StepOutcome{}, errors.New("rundaemon: nil stdout")
+	}
 	defer c.stdin.Close()
 
 	c.mu.Lock()
@@ -255,25 +277,60 @@ func (c *Client) RunStep(ctx context.Context, step Step) (StepOutcome, error) {
 		drainStderr(&o)
 		return o, nil
 	}
+	// The ack must come from a RUNNER (not another daemon or a same-proto
+	// non-runner endpoint), and — when bootstrap pinned an expected version — from
+	// exactly the bootstrapped binary. Either mismatch means we would otherwise
+	// send run/file frames to a wrong-role or stale endpoint, so reject at the
+	// handshake (body never ran) and let mcp fall back / re-bootstrap.
+	if hello.Role != runnerproto.RoleRunner {
+		o := StepOutcome{
+			Exit:          -1,
+			RunnerHello:   hello,
+			ProtoMismatch: true,
+			Error:         fmt.Sprintf("runner handshake role mismatch (got role:%q, want %q)", hello.Role, runnerproto.RoleRunner),
+		}
+		drainStderr(&o)
+		return o, nil
+	}
+	if step.ExpectVersion != "" && hello.Version != step.ExpectVersion {
+		o := StepOutcome{
+			Exit:          -1,
+			RunnerHello:   hello,
+			ProtoMismatch: true,
+			Error:         fmt.Sprintf("runner version mismatch (runner version:%q, expected %q)", hello.Version, step.ExpectVersion),
+		}
+		drainStderr(&o)
+		return o, nil
+	}
 
 	// 2. Stage files, then the run frame. step start = the moment the runner is
 	// told to execute, so ElapsedNS is measured from here.
+	//
+	// Frame-size preflight (finding #1b): a file/run frame whose encoded ndjson
+	// line would exceed runnerproto.MaxLineBytes is NOT sent — the remote decoder
+	// rejects an oversized line as a protocol error, which would surface as a
+	// false exit -1 for a body that never executed. Detecting it daemon-side lets
+	// mcp fall back to legacy (body provably unsent) instead. This is checked
+	// BEFORE the run frame is written, so nothing runs on an oversize step.
 	for _, f := range step.Files {
-		if err := c.enc.Encode(runnerproto.Frame{
+		fr := runnerproto.Frame{
 			Type: runnerproto.FrameFile,
 			File: &runnerproto.FileFrame{Name: f.Name, Data: f.Data},
-		}); err != nil {
+		}
+		if over, err := frameOverLimit(fr); err != nil || over {
+			o := unsentOversize(fmt.Sprintf("file frame %q too large to send (exceeds %d-byte wire limit)", f.Name, runnerproto.MaxLineBytes))
+			o.RunnerHello = hello
+			drainStderr(&o)
+			return o, nil
+		}
+		if err := c.enc.Encode(fr); err != nil {
 			o := wireCut("send file frame: " + err.Error())
 			o.RunnerHello = hello
 			drainStderr(&o)
 			return o, nil
 		}
 	}
-	c.mu.Lock()
-	c.start = time.Now()
-	c.phase = "run"
-	c.mu.Unlock()
-	if err := c.enc.Encode(runnerproto.Frame{
+	runFrame := runnerproto.Frame{
 		Type: runnerproto.FrameRun,
 		Run: &runnerproto.RunFrame{
 			Program:    step.Program,
@@ -281,7 +338,18 @@ func (c *Client) RunStep(ctx context.Context, step Step) (StepOutcome, error) {
 			Entrypoint: step.Entrypoint,
 			TimeoutNS:  step.Timeout.Nanoseconds(),
 		},
-	}); err != nil {
+	}
+	if over, err := frameOverLimit(runFrame); err != nil || over {
+		o := unsentOversize(fmt.Sprintf("run frame too large to send (body exceeds %d-byte wire limit)", runnerproto.MaxLineBytes))
+		o.RunnerHello = hello
+		drainStderr(&o)
+		return o, nil
+	}
+	c.mu.Lock()
+	c.start = time.Now()
+	c.phase = "run"
+	c.mu.Unlock()
+	if err := c.enc.Encode(runFrame); err != nil {
 		o := wireCut("send run frame: " + err.Error())
 		o.RunnerHello = hello
 		drainStderr(&o)
@@ -543,6 +611,25 @@ func protocolError(reason string, partial *StepOutcome) StepOutcome {
 	o.ProtocolError = true
 	o.Error = "protocol error: " + reason
 	return o
+}
+
+// unsentOversize marks a frame the daemon refused to send because its encoded
+// ndjson line would exceed runnerproto.MaxLineBytes. The body never ran, so the
+// caller falls back to legacy (ranBody=false), NOT a false exit -1.
+func unsentOversize(reason string) StepOutcome {
+	return StepOutcome{Exit: -1, UnsentOversize: true, Error: "frame too large: " + reason}
+}
+
+// frameOverLimit reports whether f's encoded ndjson line (the JSON plus the
+// trailing '\n' the encoder appends) would exceed runnerproto.MaxLineBytes — the
+// same ceiling the remote decoder enforces. It returns an error only if the frame
+// fails to marshal, which the caller treats as unsendable as well.
+func frameOverLimit(f runnerproto.Frame) (bool, error) {
+	data, err := json.Marshal(f)
+	if err != nil {
+		return false, err
+	}
+	return len(data)+1 > runnerproto.MaxLineBytes, nil
 }
 
 // formatDur renders a nanosecond duration self-scaling (ns/µs/ms/s), matching

@@ -66,7 +66,11 @@ build:
 build-runners:
     #!/usr/bin/env bash
     set -euo pipefail
-    runner_src=(cmd/shellkit-runner internal/runnerproto internal/interp)
+    # go.mod/go.sum are part of the version input: a dependency bump (e.g. mvdan/sh)
+    # changes runner behavior without touching cmd/internal source, so excluding
+    # them would let a stale-behavior binary keep a matching RunnerVersion and be
+    # accepted by the warm-hit path (finding #9).
+    runner_src=(cmd/shellkit-runner internal/runnerproto internal/interp go.mod go.sum)
     version=$(git ls-files -- "${runner_src[@]}" | LC_ALL=C sort | xargs -r sha256sum | sha256sum | cut -c1-12)
     out_dir=internal/rundaemon/runners
     mkdir -p "$out_dir"
@@ -86,7 +90,16 @@ build-runners:
             # Ad-hoc sign: unsigned cross-compiled arm64 Mach-O binaries are
             # SIGKILLed by AMFI on first exec on real Apple Silicon hardware
             # (decision #18). Ad-hoc signing needs no Apple account/identity.
-            codesign -s - "$bin"
+            #
+            # codesign is macOS-only; the flake supports linux dev hosts too. Guard
+            # it so the 4-target build runs on linux (finding #12) — the resulting
+            # darwin/arm64 artifact is UNSIGNED there (it only needs AMFI signing to
+            # exec on real Apple Silicon), so emit a warning rather than fail.
+            if [ "$(uname -s)" = "Darwin" ] && command -v codesign >/dev/null 2>&1; then
+                codesign -s - "$bin"
+            else
+                echo "build-runners: WARNING — codesign unavailable on this build host ($(uname -s)); darwin/arm64 artifact is UNSIGNED and will be AMFI-killed on real Apple Silicon. Rebuild on macOS before shipping that target." >&2
+            fi
         fi
         gzip -n -9 -c "$bin" >"$out_dir/runner-${goos}-${goarch}.gz"
         rm -rf "$work"

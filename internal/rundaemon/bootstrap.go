@@ -163,14 +163,11 @@ func (b *Bootstrapper) Bootstrap(ctx context.Context, srv *inventory.Server) Res
 
 	final := runnerPath(env.rootExpr, goos, goarch)
 
-	// Warm HIT: the right binary is already present.
-	if b.versionMatches(ctx, srv, final) {
-		return Result{RunnerPath: final}
-	}
-
-	// Miss: decompress daemon-side (push raw bytes so the remote needs only
-	// cat/chmod/mv — no gunzip dependency, decision #3) and compute the sha256 of
-	// the exact bytes we push (security #1).
+	// Decompress daemon-side (push raw bytes so the remote needs only cat/chmod/mv
+	// — no gunzip dependency, decision #3) and compute the sha256 of the exact
+	// bytes we would push. This digest is the trust anchor for BOTH a warm hit and
+	// a fresh push (security #1): the daemon is the authority on the expected
+	// content, never the remote binary's self-reported --version string.
 	raw, err := gunzip(gz)
 	if err != nil {
 		return fallback(fmt.Sprintf(
@@ -179,6 +176,17 @@ func (b *Bootstrapper) Bootstrap(ctx context.Context, srv *inventory.Server) Res
 	}
 	sum := sha256.Sum256(raw)
 	wantSum := hex.EncodeToString(sum[:])
+
+	// Warm HIT: a binary is already present at the immutable path. Trust it ONLY
+	// when its remote sha256 matches the daemon-computed digest of the embedded
+	// bytes — a version-string match alone is forgeable, so a local user on a
+	// shared candidate root (/var/tmp, /dev/shm) could otherwise plant a
+	// version-spoofing binary that we would exec as the ssh account (security).
+	// A digest miss (no cached file, wrong content, or a planted spoof) is NOT a
+	// warm hit: fall through to re-push, which overwrites via an atomic mv.
+	if b.cachedDigestMatches(ctx, srv, final, wantSum) {
+		return Result{RunnerPath: final}
+	}
 
 	// Push + verify, re-pushing ONCE on a digest OR exec-test mismatch (task
 	// step 4). A transport/filesystem failure short of a mismatch is not retried.
@@ -236,8 +244,26 @@ func (b *Bootstrapper) resolveRoot(ctx context.Context, srv *inventory.Server) (
 	return hostEnv{}, false
 }
 
+// cachedDigestMatches reports whether the file at path exists and its
+// remote-computed sha256 equals wantSum (the daemon's digest of the embedded
+// bytes). It is the warm-HIT trust check: a version-string match is forgeable, so
+// the cache is trusted ONLY on a byte-exact digest match, closing the
+// version-spoofing attack on a shared candidate root. A missing file, an
+// unreadable path, an absent sha256 tool, or any digest disagreement all read as
+// a clean miss (no hit) so bootstrap re-pushes rather than execing an unverified
+// binary.
+func (b *Bootstrapper) cachedDigestMatches(ctx context.Context, srv *inventory.Server, path, wantSum string) bool {
+	res := b.exec.run(ctx, srv, cachedDigestCmd(path), nil)
+	if !res.ok() {
+		return false
+	}
+	return parseDigest(string(res.Stdout)) == wantSum
+}
+
 // versionMatches runs `<path> --version` and reports whether the output carries
-// RunnerVersion — the probe HIT check and the post-push exec-test share it.
+// RunnerVersion — the post-push exec-test (the binary actually runs and reports
+// the expected version). NOT used for the warm-HIT decision, which is digest-gated
+// via cachedDigestMatches; here the bytes were already digest-verified during push.
 func (b *Bootstrapper) versionMatches(ctx context.Context, srv *inventory.Server, path string) bool {
 	res := b.exec.run(ctx, srv, versionCmd(path), nil)
 	if !res.ok() {

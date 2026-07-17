@@ -76,13 +76,44 @@ func TestRouting(t *testing.T) {
 		{"select", "select x in a b; do break; done\n", RouteRealbash, "select"},
 		{"mapfile_n", "mapfile -n 2 arr\n", RouteRealbash, "mapfile"},
 
+		// ---- Class A: printf -v (assign) -> realbash ----
+		{"printf_v", "printf -v out '%s' hi\n", RouteRealbash, "printf -v"},
+		{"printf_v_combined", "printf -rv out '%s' hi\n", RouteRealbash, "printf -v"},
+
 		// ---- Class B: silent-divergence idiom screen -> realbash ----
 		{"pipe_final_cd", "echo x | cd /tmp\n", RouteRealbash, "final stage"},
 		{"pipe_final_read", "echo x | read v\n", RouteRealbash, "final stage"},
 		{"pipe_final_export", "echo x | export Y=1\n", RouteRealbash, "final stage"},
+		{"pipe_final_while_read", "seq 3 | while read x; do :; done\n", RouteRealbash, "compound command"},
+		{"pipe_final_for", "echo x | for i in a b; do :; done\n", RouteRealbash, "compound command"},
+		{"pipe_final_subshell", "echo x | (read v)\n", RouteRealbash, "compound command"},
+		{"pipe_final_block", "echo x | { read v; }\n", RouteRealbash, "compound command"},
+		{"pipe_final_eval", "printf 'v\\n' | eval read y\n", RouteRealbash, "eval"},
+		{"pipe_final_dynamic_head", "printf 'v\\n' | $cmd read y\n", RouteRealbash, "dynamic command head"},
+
+		// ---- Class B: pipeline final-stage ALLOWLIST inversion -> realbash ----
+		// The final stage stays on interp only if provably a plain external
+		// command; every in-process construct below leaks parent state under
+		// interp (bash subshell-isolates the final stage, discarding its effect).
+		{"pipe_final_arith_incr", "seq 3 | ((n++))\n", RouteRealbash, "arithmetic command"},
+		{"pipe_final_arith_plus", "seq 3 | (( n += 5 ))\n", RouteRealbash, "arithmetic command"},
+		{"pipe_final_let", "seq 3 | let n=5\n", RouteRealbash, "`let`"},
+		{"pipe_final_unset", "echo x | unset V\n", RouteRealbash, "unset"},
+		{"pipe_final_mapfile", "printf 'a\\nb\\n' | mapfile -t A\n", RouteRealbash, "mapfile"},
+		{"pipe_final_readarray", "printf 'a\\nb\\n' | readarray -t A\n", RouteRealbash, "readarray"},
+		{"pipe_final_command_cd", "echo x | command cd sub\n", RouteRealbash, "command"},
+		{"pipe_final_builtin_cd", "echo y | builtin cd sub\n", RouteRealbash, "builtin"},
+		{"pipe_final_source", "echo y | source x.sh\n", RouteRealbash, "source"},
+		{"pipe_final_dot", "echo y | . y.sh\n", RouteRealbash, "final stage"},
+		{"pipe_final_bare_assign", "echo x | VAR=1\n", RouteRealbash, "bare assignment"},
+		{"pipe_final_local_func", "fn() { cd /tmp; }\necho x | fn\n", RouteRealbash, "function `fn`"},
+
+		// External-command final stage -> interp (must NOT over-screen).
 		{"exec_redirect_no_cmd", "exec > log\n", RouteRealbash, "exec"},
 		{"dollar_pid", "echo p-$$\n", RouteRealbash, "$$"},
 		{"bang_pid", "sleep 1 & echo $!\n", RouteRealbash, "$!"},
+		{"brace_dollar_pid", "echo \"${$}\"\n", RouteRealbash, "$$"},
+		{"brace_bang_pid", "echo \"${!}\"\n", RouteRealbash, "$!"},
 		{"trap_exit_plus_exec", "trap 'rm f' EXIT\nexec sleep 1\n", RouteRealbash, "EXIT"},
 		{"ifs_plus_forloop", "IFS=,\nfor x in $d; do echo $x; done\n", RouteRealbash, "IFS"},
 
@@ -91,6 +122,12 @@ func TestRouting(t *testing.T) {
 		{"clean_export_keyword", "export FOO=bar\n", RouteInterp, ""},
 		{"clean_declare_bare", "declare x=1\n", RouteInterp, ""},
 		{"clean_pipe_plain", "echo x | grep x\n", RouteInterp, ""},
+		// External-command final stages must stay on interp (allowlist must not
+		// over-screen a plain forked command that cannot leak parent state).
+		{"clean_pipe_awk", "cat f | awk '{print}'\n", RouteInterp, ""},
+		{"clean_pipe_sed", "echo x | sed 's/x/y/'\n", RouteInterp, ""},
+		{"clean_pipe_chain", "ls | sort | head\n", RouteInterp, ""},
+		{"clean_pipe_wc", "seq 3 | wc -l\n", RouteInterp, ""},
 		{"clean_trap_exit", "trap 'echo bye' EXIT\n", RouteInterp, ""},
 		{"clean_trap_err", "trap 'echo e' ERR\n", RouteInterp, ""},
 		{"clean_read_basic", "read -r -p 'p' v\n", RouteInterp, ""},
@@ -136,6 +173,11 @@ func TestNoStaleFalsePositives(t *testing.T) {
 		"echo ${x@P}\n",
 		"echo ${x@Q}\n",
 		"declare -A m\n",
+		// Indirect expansion / array-keys use Param.Value = the referenced NAME
+		// (Excl=true), not "!" — they must not be mistaken for the ${!} pid form.
+		"echo ${!ref}\n",
+		"echo ${!arr[@]}\n",
+		"echo ${#$}\n", // length of $$ (digit count) — not the colliding pid value
 	}
 	for _, body := range fixed {
 		v, err := Preflight([]byte(body))

@@ -6,4 +6,4 @@ package rundaemon
 // hash the runner's main.version carries (ldflags in build-runners). Keeping
 // the two in lockstep is the bootstrap version-sync invariant; a normal
 // `go build ./cmd/shellkit` picks up this hash with no special ldflags.
-func init() { RunnerVersion = "2f658a034a51" }
+func init() { RunnerVersion = "bb82f4a10429" }
