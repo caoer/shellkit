@@ -113,6 +113,40 @@ func TestTracer_ExternalStartEnd(t *testing.T) {
 	}
 }
 
+// TestTracer_LineNumbers proves both trace seams stamp cmd_start frames with
+// the command's 1-based source line from the interp handler position — the
+// signal the daemon bridges into "executing" events so the log dashboard can
+// attach runner-path activity to the right source line.
+func TestTracer_LineNumbers(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses the posix `uname` external")
+	}
+	scratch := t.TempDir()
+	var buf bytes.Buffer
+	r := &runner{enc: runnerproto.NewEncoder(&buf), errOut: &buf}
+	// Line 1: external. Line 2: blank. Line 3: builtin (a CallExpr — a
+	// DeclClause like `export FOO=bar` never reaches the CallHandler seam).
+	rf := &runnerproto.RunFrame{Program: []byte("uname -s\n\npwd\n")}
+
+	code, runErr := r.runInterp(context.Background(), rf, scratch, filepath.Join(scratch, outputFileName))
+	if runErr != "" || code != 0 {
+		t.Fatalf("run failed: code=%d err=%q", code, runErr)
+	}
+
+	byCmd := map[string]int{}
+	for _, tf := range traceFrames(decodeStrict(t, &buf)) {
+		if tf.Event == runnerproto.TraceCmdStart {
+			byCmd[strings.Join(tf.Argv, " ")] = tf.Line
+		}
+	}
+	if got := byCmd["uname -s"]; got != 1 {
+		t.Errorf("external cmd_start line = %d, want 1", got)
+	}
+	if got := byCmd["pwd"]; got != 3 {
+		t.Errorf("builtin cmd_start line = %d, want 3", got)
+	}
+}
+
 // TestTracer_ExternalExitCaptured proves the runner path surfaces a per-command
 // exit code the old DEBUG-trap trace never had access to: an external command
 // that fails carries its real exit on cmd_end even though the step overall may

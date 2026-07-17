@@ -69,6 +69,7 @@ func (t *tracer) execMiddleware(next interp.ExecHandlerFunc) interp.ExecHandlerF
 			Event: runnerproto.TraceCmdStart,
 			Seq:   seq,
 			Argv:  args,
+			Line:  handlerLine(ctx),
 		})
 
 		startedAt := time.Now()
@@ -112,15 +113,26 @@ func (t *tracer) runExternal(ctx context.Context, args []string) error {
 // CallHandler MUST be non-fatal: a non-nil error here halts the whole Runner
 // (interp treats a CallHandler error as fatal), so it ALWAYS returns the args
 // unchanged and a nil error — pure observation.
-func (t *tracer) callObserve(_ context.Context, args []string) ([]string, error) {
+func (t *tracer) callObserve(ctx context.Context, args []string) ([]string, error) {
 	if len(args) > 0 && interp.IsBuiltin(args[0]) {
 		t.emit(runnerproto.TraceFrame{
 			Event: runnerproto.TraceCmdStart,
 			Seq:   t.nextSeq(),
 			Argv:  args,
+			Line:  handlerLine(ctx),
 		})
 	}
 	return args, nil
+}
+
+// handlerLine extracts the command's 1-based source line from the interp
+// handler context. 0 when the operation carries no position (HandlerContext.Pos
+// may be invalid) — the trace frame then omits the field on the wire.
+func handlerLine(ctx context.Context) int {
+	if pos := interp.HandlerCtx(ctx).Pos; pos.IsValid() {
+		return int(pos.Line())
+	}
+	return 0
 }
 
 // exitStatusOf extracts a command's exit code from the error the exec chain

@@ -48,6 +48,7 @@ func TestRoundTripAllFrames(t *testing.T) {
 		{"file", Frame{Type: FrameFile, File: &FileFrame{Name: "prev.out", Data: []byte("staged contents\n")}}},
 		{"file-binary", Frame{Type: FrameFile, File: &FileFrame{Name: "blob.bin", Data: []byte{0x00, 0xff, 0xfe, 0x80, 0x7f}}}},
 		{"trace-start", Frame{Type: FrameTrace, Trace: &TraceFrame{Event: TraceCmdStart, Seq: 1, Argv: []string{"ls", "-la", "/tmp"}}}},
+		{"trace-start-line", Frame{Type: FrameTrace, Trace: &TraceFrame{Event: TraceCmdStart, Seq: 3, Argv: []string{"true"}, Line: 7}}},
 		{"trace-end", Frame{Type: FrameTrace, Trace: &TraceFrame{Event: TraceCmdEnd, Seq: 1, Exit: 0, DurNS: 4_200_000}}},
 		{"trace-end-nonzero", Frame{Type: FrameTrace, Trace: &TraceFrame{Event: TraceCmdEnd, Seq: 2, Exit: 137, DurNS: 5_000_000_000}}},
 		{"io-text", Frame{Type: FrameIO, IO: &IOFrame{FD: 1, Data: "hello world\n"}}},

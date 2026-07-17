@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/caoer/shellkit/internal/inventory"
+	"github.com/caoer/shellkit/internal/rundaemon"
 	"github.com/caoer/shellkit/internal/sshconn"
 )
 
@@ -319,6 +320,35 @@ func TestWrapScript_Sh(t *testing.T) {
 	}
 	if !strings.Contains(wrapped, outputMarkerFor(nonce)) {
 		t.Error("sh wrap should contain output marker")
+	}
+}
+
+func TestRunnerExecutingFields_MatchesLegacySchema(t *testing.T) {
+	f := runnerExecutingFields(2, "deploy", "host-a", rundaemon.TraceLine{
+		Command:   "git pull --ff-only",
+		LineNo:    3,
+		ElapsedNS: 2_500_000_000,
+	})
+	if f["step"] != 2 || f["name"] != "deploy" || f["host"] != "host-a" {
+		t.Errorf("identity fields wrong: %v", f)
+	}
+	if f["cmd"] != "git pull --ff-only" {
+		t.Errorf("cmd = %v", f["cmd"])
+	}
+	if f["elapsed_sec"] != 2 {
+		t.Errorf("elapsed_sec = %v, want 2", f["elapsed_sec"])
+	}
+	// Dashboard indexes line_no in the legacy trap coordinate system: the trap
+	// script has one prepended line, so body line N → line_no N+1.
+	if f["line_no"] != 4 {
+		t.Errorf("line_no = %v, want 4 (body 3 + trap offset)", f["line_no"])
+	}
+
+	// Unknown line (older runner / no position): the field must be absent, so
+	// the dashboard falls back instead of matching line 1.
+	f = runnerExecutingFields(0, "s", "h", rundaemon.TraceLine{Command: "true"})
+	if _, present := f["line_no"]; present {
+		t.Errorf("line_no should be absent for LineNo=0, got %v", f["line_no"])
 	}
 }
 

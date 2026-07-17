@@ -42,6 +42,9 @@ type TraceLine struct {
 	DurationNS int64
 	// Command is the argv joined by spaces (external) or the source text (builtin).
 	Command string
+	// LineNo is the command's 1-based source line in the step body (from the
+	// cmd_start frame). 0 = unknown (older runner or no position at the seam).
+	LineNo int
 	// Exit is the command's own exit code, non-nil once its cmd_end arrived; nil
 	// means unknown (no cmd_end seen — truncated mid-run).
 	Exit *int
@@ -146,6 +149,19 @@ type Client struct {
 	host   string
 	curCmd string
 	recent []string
+
+	// Live event hooks, optionally set by the caller BEFORE RunStep. All are
+	// invoked from the read-loop goroutine as frames arrive, so they must be
+	// fast and must not block — they exist to bridge the runner's live frame
+	// stream into the daemon's event log (the legacy path gets the equivalent
+	// for free by teeing the ssh stdout). Nil hooks are skipped.
+	//
+	// OnCmdStart fires once per cmd_start frame with the opened TraceLine
+	// (Command, LineNo, ElapsedNS; Duration/Exit not yet known). OnStdout /
+	// OnStderr fire with each io frame's raw bytes (fd 1 / fd 2).
+	OnCmdStart func(TraceLine)
+	OnStdout   func([]byte)
+	OnStderr   func([]byte)
 }
 
 // NewClient wraps the runner's stdio in a protocol client. stdin carries the
@@ -408,8 +424,14 @@ func (c *Client) readLoop() StepOutcome {
 			}
 			if fr.IO.FD == 2 {
 				stderr.Write(b)
+				if c.OnStderr != nil {
+					c.OnStderr(b)
+				}
 			} else {
 				stdout.Write(b)
+				if c.OnStdout != nil {
+					c.OnStdout(b)
+				}
 			}
 			c.pushRecent(b)
 		case runnerproto.FrameOutput:
@@ -451,10 +473,14 @@ func (c *Client) handleTrace(t *runnerproto.TraceFrame, trace *[]TraceLine, seqI
 			Seq:       t.Seq,
 			ElapsedNS: c.elapsed(),
 			Command:   cmd,
+			LineNo:    t.Line,
 		}
 		*trace = append(*trace, line)
 		seqIndex[t.Seq] = len(*trace) - 1
 		c.setCurCmd(cmd)
+		if c.OnCmdStart != nil {
+			c.OnCmdStart(line)
+		}
 	case runnerproto.TraceCmdEnd:
 		exit := t.Exit
 		if i, ok := seqIndex[t.Seq]; ok {

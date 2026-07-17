@@ -222,6 +222,50 @@ func TestRunStep_HappyPath(t *testing.T) {
 	}
 }
 
+// TestRunStep_LiveHooks proves the optional live hooks fire from the read loop
+// as frames arrive: OnCmdStart once per cmd_start (carrying Command + LineNo),
+// OnStdout/OnStderr with each io frame's bytes — the bridge the daemon uses to
+// feed the event log while a runner step executes.
+func TestRunStep_LiveHooks(t *testing.T) {
+	c, f := newFakeConn()
+
+	var mu sync.Mutex
+	var cmds []TraceLine
+	var outBytes, errBytes []byte
+	c.OnCmdStart = func(tl TraceLine) { mu.Lock(); cmds = append(cmds, tl); mu.Unlock() }
+	c.OnStdout = func(b []byte) { mu.Lock(); outBytes = append(outBytes, b...); mu.Unlock() }
+	c.OnStderr = func(b []byte) { mu.Lock(); errBytes = append(errBytes, b...); mu.Unlock() }
+
+	go f.serve(t, func(run runnerproto.RunFrame) {
+		start := traceStart(1, "echo", "hi")
+		start.Trace.Line = 4
+		f.emit(t, start)
+		f.emit(t, ioFrame(1, "hi\n"))
+		f.emit(t, ioFrame(2, "warn\n"))
+		f.emit(t, traceEnd(1, 0, 1_000))
+		f.emit(t, resultFrame(0, 2_000, ""))
+	})
+
+	if _, err := c.RunStep(context.Background(), Step{Program: []byte("echo hi\n")}); err != nil {
+		t.Fatalf("RunStep error: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(cmds) != 1 {
+		t.Fatalf("OnCmdStart fired %d times, want 1", len(cmds))
+	}
+	if cmds[0].Command != "echo hi" || cmds[0].LineNo != 4 {
+		t.Errorf("OnCmdStart got Command=%q LineNo=%d, want \"echo hi\" 4", cmds[0].Command, cmds[0].LineNo)
+	}
+	if string(outBytes) != "hi\n" {
+		t.Errorf("OnStdout got %q, want \"hi\\n\"", outBytes)
+	}
+	if string(errBytes) != "warn\n" {
+		t.Errorf("OnStderr got %q, want \"warn\\n\"", errBytes)
+	}
+}
+
 func TestRunStep_PerCommandExitSurfaced(t *testing.T) {
 	c, f := newFakeConn()
 	go f.serve(t, func(run runnerproto.RunFrame) {

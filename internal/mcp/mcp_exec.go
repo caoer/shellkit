@@ -580,6 +580,20 @@ func (e *Executor) runRunnerSSH(ctx context.Context, srv *inventory.Server, body
 	stream.SetProgressDelegate(proc.Client.ProgressSummary)
 	defer stream.SetProgressDelegate(nil)
 
+	// Bridge the runner's live frame stream into the event log — the same
+	// "executing"/"stdout"/"stderr" events the legacy path emits by teeing the
+	// ssh stdout, so the log dashboard renders runner-path steps per-command
+	// (live and in history) instead of leaving every source line pending.
+	if stream != nil {
+		outW := stream.StdoutWriter(stepIdx, step.Name, host, "") // runner io frames carry no wrapper markers
+		errW := stream.StderrWriter(stepIdx, step.Name, host)
+		proc.Client.OnStdout = func(b []byte) { _, _ = outW.Write(b) }
+		proc.Client.OnStderr = func(b []byte) { _, _ = errW.Write(b) }
+		proc.Client.OnCmdStart = func(t rundaemon.TraceLine) {
+			stream.Emit("executing", runnerExecutingFields(stepIdx, step.Name, host, t))
+		}
+	}
+
 	stepCtx, cancelStep := context.WithTimeout(ctx, stepTimeout)
 	defer cancelStep()
 
@@ -632,6 +646,26 @@ func (e *Executor) runRunnerSSH(ctx context.Context, srv *inventory.Server, body
 		Error:      outcome.Error,
 	}
 	return result, true
+}
+
+// runnerExecutingFields shapes one runner cmd_start into the same "executing"
+// event the legacy DEBUG-trap emitter produces (events.go processLine), so the
+// dashboard consumes both paths through one schema. The runner reports the
+// TRUE 1-based body line; the legacy trap reports $LINENO of a script with one
+// prepended trap line, and the dashboard indexes in that trap coordinate system
+// (body+1 — see prependTrace) — so convert here.
+func runnerExecutingFields(stepIdx int, stepName, host string, t rundaemon.TraceLine) map[string]any {
+	fields := map[string]any{
+		"step":        stepIdx,
+		"name":        stepName,
+		"host":        host,
+		"elapsed_sec": int(t.ElapsedNS / int64(time.Second)),
+		"cmd":         t.Command,
+	}
+	if t.LineNo > 0 {
+		fields["line_no"] = t.LineNo + 1
+	}
+	return fields
 }
 
 // adaptRunnerTrace maps rundaemon's render-agnostic TraceLine (its own type, so

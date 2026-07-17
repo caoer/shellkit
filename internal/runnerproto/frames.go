@@ -175,6 +175,10 @@ type TraceFrame struct {
 	Seq int `json:"seq"`
 	// Argv is the command's argument vector (cmd_start).
 	Argv []string `json:"argv,omitempty"`
+	// Line is the command's 1-based source line in the step body (cmd_start),
+	// from the interp handler's position. 0 = unknown (older runner, or the
+	// operation carried no position). Optional on the wire in both directions.
+	Line int `json:"line,omitempty"`
 	// Exit is the command's exit code (cmd_end).
 	Exit int `json:"exit,omitempty"`
 	// DurNS is the command's monotonic duration in nanoseconds (cmd_end).
