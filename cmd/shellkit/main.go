@@ -14,6 +14,7 @@ import (
 	"github.com/caoer/shellkit/internal/mcp"
 	"github.com/caoer/shellkit/internal/sshconn"
 	"github.com/caoer/shellkit/internal/tui"
+	"golang.org/x/term"
 )
 
 // inventorySearchPaths are conventional inventory filenames, searched from the
@@ -294,6 +295,10 @@ func main() {
 			fmt.Fprintln(os.Stderr, "usage: shellkit ssh <name|alias>")
 			os.Exit(1)
 		}
+		if reason := sshMisuse(rest); reason != "" {
+			printSSHMisuse(reason, name, rest[1:])
+			os.Exit(1)
+		}
 		sshByName(servers, name)
 	case "mcp":
 		mcpSubcmd(servers, inventoryPath, rest)
@@ -423,6 +428,45 @@ func nukeControlSockets() {
 	if removed > 0 {
 		fmt.Fprintf(os.Stderr, "nuked %d control socket(s) in %s\n", removed, sockDir)
 	}
+}
+
+// sshMisuse reports why this `shellkit ssh` invocation looks like an agent
+// shelling out instead of calling the MCP tool: a non-interactive console, or
+// a trailing command that interactive ssh would silently drop. Empty string
+// means the invocation is a normal interactive login.
+func sshMisuse(rest []string) string {
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return "stdin is not a terminal"
+	}
+	if len(rest) > 1 {
+		return fmt.Sprintf("trailing command %q would be silently dropped", strings.Join(rest[1:], " "))
+	}
+	return ""
+}
+
+// printSSHMisuse tells an agent how to redo the call through the shellkit MCP
+// tool, echoing its intended command back as a ready-to-use DSL block.
+func printSSHMisuse(reason, name string, cmdArgs []string) {
+	body := "<your command here>"
+	if len(cmdArgs) > 0 {
+		body = strings.Join(cmdArgs, " ")
+	}
+	fmt.Fprintf(os.Stderr, `error: shellkit ssh is an interactive login command for humans (%s).
+
+If you are an agent, do not shell out to shellkit — use the shellkit MCP tool:
+
+  Tool name: mcp__shellkit__ssh
+  If its schema is not loaded yet, load it first:
+    ToolSearch query="select:mcp__shellkit__ssh"
+  Then call it with input:
+
+    ### run
+    {"ssh": %q}
+
+    %s
+
+Daemon not running? Start it with: shellkit mcp start
+`, reason, name, body)
 }
 
 func sshByName(servers []inventory.Server, name string) {
