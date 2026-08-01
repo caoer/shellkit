@@ -92,3 +92,65 @@ func TestUnifiedStickyBottom(t *testing.T) {
 		t.Error("should NOT snap to bottom after user scrolled away")
 	}
 }
+
+// TestUnifiedIsEntryView verifies the zero-value view mode is unified, so
+// `shellkit logs` opens straight into it.
+func TestUnifiedIsEntryView(t *testing.T) {
+	if got := ldInitialModel().view; got != ldViewUnified {
+		t.Errorf("entry view: want ldViewUnified, got %v", got)
+	}
+}
+
+// TestUnifiedEscSemantics verifies esc in unified clears an active filter and
+// otherwise does nothing — it never navigates away. Only q/ctrl+c quit.
+func TestUnifiedEscSemantics(t *testing.T) {
+	h := newHarness(t, 120, 30)
+	seedCalls(h, 5)
+
+	// esc with no filter is a no-op.
+	h.feedKey("esc")
+	if h.m.view != ldViewUnified {
+		t.Errorf("esc with no filter: view changed to %v", h.m.view)
+	}
+
+	// Type a filter, leave input mode, then esc clears the query.
+	h.feedKey("/")
+	h.feedKey("c") // matches the seeded "call-000N" ids
+	if !h.m.filtering {
+		t.Fatal("expected filtering mode after /")
+	}
+	h.feedKey("esc") // leaves input mode, keeps the query
+	if h.m.filtering {
+		t.Error("esc in input mode should leave filtering")
+	}
+	if h.m.filter.Value() != "c" {
+		t.Fatalf("filter value: want %q, got %q", "c", h.m.filter.Value())
+	}
+
+	h.feedKey("esc") // clears the query
+	if h.m.filter.Value() != "" {
+		t.Errorf("esc should clear the filter, got %q", h.m.filter.Value())
+	}
+	if h.m.view != ldViewUnified {
+		t.Errorf("esc must not navigate away from unified, got %v", h.m.view)
+	}
+}
+
+// TestDetailEscReturnsToUnified verifies both back-keys land in unified.
+func TestDetailEscReturnsToUnified(t *testing.T) {
+	for _, key := range []string{"esc", "backspace"} {
+		t.Run(key, func(t *testing.T) {
+			h := newHarness(t, 120, 30)
+			seedCalls(h, 5)
+
+			h.feedKey("D")
+			if h.m.view != ldViewDetail {
+				t.Fatalf("D: want detail view, got %v", h.m.view)
+			}
+			h.feedKey(key)
+			if h.m.view != ldViewUnified {
+				t.Errorf("%s: want unified view, got %v", key, h.m.view)
+			}
+		})
+	}
+}

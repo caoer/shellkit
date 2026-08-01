@@ -72,7 +72,7 @@ var (
 type ldLayout int
 
 const (
-	ldLayoutFatRight ldLayout = iota // 30/70 — default for list view
+	ldLayoutFatRight ldLayout = iota // 30/70 — default: compact cells, wide waterfall
 	ldLayoutBalanced                 // 50/50
 	ldLayoutFatLeft                  // 65/35
 	ldLayoutCount                    // sentinel for cycling
@@ -105,20 +105,16 @@ func (l ldLayout) ratio() (int, int) {
 
 type ldViewMode int
 
+// ldViewUnified is the zero value: `shellkit logs` opens straight into it.
 const (
-	ldViewList ldViewMode = iota
+	ldViewUnified ldViewMode = iota
 	ldViewDetail
-	ldViewUnified
 )
-
-// ── Constants ───────────────────────────────────────────────────────
-
-const maxEntryBodyLines = 10 // cap per entry in list view
 
 // ── Render cache ────────────────────────────────────────────────────
 //
 // renderedCell caches pre-styled string slices for one call-log entry
-// across all three view modes. Version-gated: the cell is valid as long as
+// across both view modes. Version-gated: the cell is valid as long as
 // the cached version >= the activeCall's current version.
 
 type renderedCell struct {
@@ -126,7 +122,6 @@ type renderedCell struct {
 	left     []string // pre-styled left-column lines (unified view)
 	right    []string // pre-styled right-column lines (unified waterfall)
 	hasRight bool     // true once right has been computed (nil right = no steps)
-	list     []string // pre-styled list-view body lines
 }
 
 const cellCacheCap = 200 // max cached cells before LRU eviction
@@ -142,7 +137,6 @@ type ldModel struct {
 	merged   []mcp.CallEntry
 	filtered []int
 	cursor   int
-	listVP   viewport.Model // replaces scroll, allLines, entryOffsets
 	height   int
 	width    int
 
@@ -182,12 +176,6 @@ type ldModel struct {
 	cacheLRU      []string // FIFO order for eviction at cellCacheCap
 	cacheLRUDirty bool     // marks needing end-of-frame eviction pass
 
-	// List view cursor-move optimization: avoid full rebuild when only
-	// selection changed. entryOffsets[i] = line index where filtered[i] starts.
-	entryOffsets []int
-	listSepLine  string // cached separator: ldBorder.Render("───...───")
-	listSepWidth int    // width the separator was rendered at
-
 	// Unified left column separator cache.
 	unifiedSepLine  string
 	unifiedSepWidth int
@@ -202,9 +190,6 @@ func ldInitialModel() ldModel {
 
 	disabledKM := viewport.KeyMap{} // shellkit owns all navigation keys
 
-	listVP := viewport.New(120, 37)
-	listVP.KeyMap = disabledKM
-
 	uLeftVP := viewport.New(40, 37)
 	uLeftVP.KeyMap = disabledKM
 
@@ -217,12 +202,11 @@ func ldInitialModel() ldModel {
 	return ldModel{
 		height:         40,
 		width:          120,
-		listVP:         listVP,
 		unifiedLeftVP:  uLeftVP,
 		unifiedRightVP: uRightVP,
 		detailVP:       detVP,
 		filter:         fi,
-		layout:         ldLayoutFatRight, // list view's left is intrinsically compact
+		layout:         ldLayoutFatRight, // the unified cell column is intrinsically compact
 		active:         make(map[string]*activeCall),
 		activeIDs:      nil,
 		liveEventCh:    make(chan ldLiveEventMsg, 1024),
@@ -264,15 +248,11 @@ func (m ldModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.listVP.Width = msg.Width
-		m.listVP.Height = m.viewportHeight()
 		m.cacheInvalidateAll() // cells are width-dependent
-		m.refreshListView()
 		m.buildDetail()
 		m.refreshUnifiedView()
 		return m, nil
 	case ldTickMsg:
-		m.refreshListView()
 		m.buildDetail()
 		m.refreshUnifiedView()
 		tick := 2 * time.Second
@@ -295,7 +275,6 @@ func (m ldModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	drained:
 		m.rebuildFiltered()
-		m.refreshListView()
 		m.buildDetail()
 		m.refreshUnifiedView()
 		return m, waitLiveEvent(m.liveEventCh)
@@ -306,8 +285,6 @@ func (m ldModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleMouse(msg)
 	case tea.KeyMsg:
 		switch m.view {
-		case ldViewList:
-			return m.handleListKey(msg)
 		case ldViewDetail:
 			return m.handleDetailKey(msg)
 		case ldViewUnified:
@@ -324,12 +301,6 @@ func (m ldModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	const scrollLines = 3
 	switch m.view {
-	case ldViewList:
-		if msg.Button == tea.MouseButtonWheelUp {
-			m.listVP.ScrollUp(scrollLines)
-		} else {
-			m.listVP.ScrollDown(scrollLines)
-		}
 	case ldViewDetail:
 		if msg.Button == tea.MouseButtonWheelUp {
 			m.detailVP.ScrollUp(scrollLines)
@@ -416,84 +387,6 @@ func (m *ldModel) compactActiveIDs() {
 	m.activeIDs = out
 }
 
-// ── List keys ───────────────────────────────────────────────────────
-
-func (m ldModel) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.filtering {
-		switch msg.String() {
-		case "enter", "esc":
-			m.filtering = false
-			m.filter.Blur()
-			return m, nil
-		default:
-			var cmd tea.Cmd
-			m.filter, cmd = m.filter.Update(msg)
-			m.rebuildFiltered()
-			m.refreshListView()
-			return m, cmd
-		}
-	}
-
-	switch msg.String() {
-	case "q", "ctrl+c":
-		return m, tea.Quit
-	case "up", "k":
-		if m.cursor > 0 {
-			m.cursor--
-			m.refreshListView()
-			m.ensureSelectionVisible()
-		}
-	case "down", "j":
-		if m.cursor < len(m.filtered)-1 {
-			m.cursor++
-			m.refreshListView()
-			m.ensureSelectionVisible()
-		}
-	case "home", "g":
-		m.cursor = 0
-		m.refreshListView()
-		m.listVP.GotoTop()
-	case "end", "G":
-		m.cursor = max(0, len(m.filtered)-1)
-		m.refreshListView()
-		m.ensureSelectionVisible()
-	case "ctrl+u", "pgup":
-		m.listVP.HalfPageUp()
-	case "ctrl+d", "pgdown":
-		m.listVP.HalfPageDown()
-	case "enter":
-		if len(m.filtered) > 0 {
-			m.view = ldViewUnified
-			m.unifiedRightVP.GotoTop()
-			m.refreshUnifiedView()
-		}
-	case "d":
-		if len(m.filtered) > 0 {
-			m.view = ldViewDetail
-			m.detailVP.GotoTop()
-			m.buildDetail()
-		}
-	case "tab":
-		m.layout = (m.layout + 1) % ldLayoutCount
-		m.cacheInvalidateAll() // cells are width-dependent
-		m.refreshListView()
-	case "/":
-		m.filtering = true
-		m.filter.SetValue("")
-		m.filter.Focus()
-		m.rebuildFiltered()
-		m.refreshListView()
-		return m, textinput.Blink
-	case "esc":
-		if m.filter.Value() != "" {
-			m.filter.SetValue("")
-			m.rebuildFiltered()
-			m.refreshListView()
-		}
-	}
-	return m, nil
-}
-
 // ── Detail keys ─────────────────────────────────────────────────────
 
 func (m ldModel) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -501,7 +394,8 @@ func (m ldModel) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	case "esc", "backspace":
-		m.view = ldViewList
+		m.view = ldViewUnified
+		m.refreshUnifiedView()
 		return m, nil
 	case "up", "k":
 		m.detailVP.ScrollUp(1)
@@ -520,14 +414,14 @@ func (m ldModel) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cursor--
 			m.detailVP.GotoTop()
 			m.buildDetail()
-			m.refreshListView()
+			m.refreshUnifiedView()
 		}
 	case "right", "l":
 		if m.cursor < len(m.filtered)-1 {
 			m.cursor++
 			m.detailVP.GotoTop()
 			m.buildDetail()
-			m.refreshListView()
+			m.refreshUnifiedView()
 		}
 	case "D":
 		m.view = ldViewUnified
@@ -548,55 +442,10 @@ func (m ldModel) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // ── View ────────────────────────────────────────────────────────────
 
 func (m ldModel) View() string {
-	switch m.view {
-	case ldViewDetail:
+	if m.view == ldViewDetail {
 		return m.viewDetail()
-	case ldViewUnified:
-		return m.viewUnified()
-	default:
-		return m.viewList()
 	}
-}
-
-func (m ldModel) viewList() string {
-	var b strings.Builder
-
-	// title
-	title := ldTitle.Render("shellkit logs")
-	stats := ldDim.Render(fmt.Sprintf(" %d entries", len(m.entries)))
-	if q := m.filter.Value(); q != "" {
-		stats += "  " + ldAccent.Render(fmt.Sprintf("/%s (%d)", q, len(m.filtered)))
-	}
-	stats += "  " + ldDim.Render("["+m.layout.String()+"]")
-	fmt.Fprintf(&b, " %s%s\n", title, stats)
-
-	// filter
-	if m.filtering {
-		b.WriteString(" " + m.filter.View() + "\n")
-	} else {
-		b.WriteString("\n")
-	}
-
-	// viewport (handles scroll window + height padding)
-	b.WriteString(m.listVP.View())
-	b.WriteString("\n")
-
-	// status bar
-	pos := ""
-	if m.listVP.TotalLineCount() > m.listVP.Height {
-		pct := int(m.listVP.ScrollPercent() * 100)
-		pos = fmt.Sprintf("  %d%%", pct)
-	}
-	cur := 0
-	if len(m.filtered) > 0 {
-		cur = m.cursor + 1
-	}
-	lag := m.lagIndicator()
-	b.WriteString(ldBar.Render(fmt.Sprintf(
-		" [j/k]nav  [enter]detail  [tab]layout  [/]search  [r]reload  [q]uit  %d/%d%s ",
-		cur, len(m.filtered), pos)) + lag)
-
-	return b.String()
+	return m.viewUnified()
 }
 
 func (m ldModel) viewDetail() string {
@@ -646,7 +495,7 @@ func (m ldModel) viewDetail() string {
 	}
 	lag := m.lagIndicator()
 	b.WriteString(ldBar.Render(fmt.Sprintf(
-		" [j/k]scroll  [D]unified  [esc]back%s  [tab]layout  [z]zoom  [q]uit  %d/%d%s ",
+		" [j/k]scroll  [esc/D]unified%s  [tab]layout  [z]zoom  [q]uit  %d/%d%s ",
 		nav, m.cursor+1, len(m.filtered), pos)) + zoom + lag)
 
 	return b.String()
@@ -660,68 +509,6 @@ func (m ldModel) viewportHeight() int {
 	return h
 }
 
-// ── List rendering (capped height per entry) ────────────────────────
-
-func (m *ldModel) refreshListView() {
-	sep := m.cachedSepLine()
-
-	// Pre-allocate with estimate: ~(1 header + maxEntryBodyLines + 1 sep) per entry.
-	estLines := len(m.filtered) * (maxEntryBodyLines + 2)
-	lines := make([]string, 0, estLines)
-	if cap(m.entryOffsets) >= len(m.filtered) {
-		m.entryOffsets = m.entryOffsets[:0]
-	} else {
-		m.entryOffsets = make([]int, 0, len(m.filtered))
-	}
-
-	for fi, ei := range m.filtered {
-		m.entryOffsets = append(m.entryOffsets, len(lines))
-		e := &m.merged[ei]
-		selected := fi == m.cursor
-
-		// header
-		hdr := m.renderHeader(e, selected)
-		lines = append(lines, hdr)
-
-		// two-column body (capped) — use cached lines when available.
-		cell := m.renderCell(e.ID)
-		for _, bl := range cell.list {
-			if selected {
-				lines = append(lines, m.selectionLine(bl))
-			} else {
-				lines = append(lines, "  "+bl)
-			}
-		}
-
-		// separator
-		lines = append(lines, sep)
-	}
-
-	// End-of-frame LRU eviction — after all renderCell calls complete.
-	if m.cacheLRUDirty {
-		m.cacheEvict()
-	}
-
-	// Push content into viewport, preserving scroll position.
-	wasBottom := m.listVP.AtBottom()
-	oldY := m.listVP.YOffset
-	m.listVP.SetContent(strings.Join(lines, "\n"))
-	if wasBottom {
-		m.listVP.GotoBottom()
-	} else {
-		m.listVP.SetYOffset(oldY)
-	}
-}
-
-// cachedSepLine returns the pre-rendered separator, rebuilding only on width change.
-func (m *ldModel) cachedSepLine() string {
-	if m.listSepWidth != m.width {
-		m.listSepLine = ldBorder.Render(strings.Repeat("─", m.width))
-		m.listSepWidth = m.width
-	}
-	return m.listSepLine
-}
-
 // cachedUnifiedSepLine returns the separator for unified left column.
 func (m *ldModel) cachedUnifiedSepLine(w int) string {
 	if m.unifiedSepWidth != w {
@@ -729,112 +516,6 @@ func (m *ldModel) cachedUnifiedSepLine(w int) string {
 		m.unifiedSepWidth = w
 	}
 	return m.unifiedSepLine
-}
-
-func (m ldModel) renderBody(e *mcp.CallEntry, leftW, rightW, maxLines int) []string {
-	// LIST view: compact rendered summary on left, compact results on right.
-	// For active calls, the right column shows a condensed live snapshot
-	// rather than (empty) static results.
-	leftLines := renderStepSummary(e, leftW)
-	var rightLines []string
-	if a, ok := m.active[e.ID]; ok {
-		rightLines = renderLiveCompact(a, rightW)
-	} else {
-		rightLines = renderResultLines(e, rightW, 0, false)
-	}
-
-	rows := max(len(leftLines), len(rightLines))
-	sep := ldColSep.Render(" │ ")
-
-	var out []string
-	for i := 0; i < rows; i++ {
-		l := ""
-		if i < len(leftLines) {
-			l = leftLines[i]
-		}
-		r := ""
-		if i < len(rightLines) {
-			r = rightLines[i]
-		}
-		// pad both columns so the row fills consistently to terminal width
-		out = append(out, ui.PadTo(l, leftW)+sep+ui.PadTo(r, rightW))
-	}
-
-	if maxLines > 0 && len(out) > maxLines {
-		out = out[:maxLines]
-		more := rows - maxLines
-		out = append(out, ldFaint.Render(fmt.Sprintf("  … %d more lines — press enter for raw view", more)))
-	}
-	return out
-}
-
-// renderStepSummary produces a compact "rendered" view of the steps.
-// Per step: name [action] → host[s], then body preview line.
-func renderStepSummary(e *mcp.CallEntry, w int) []string {
-	if len(e.Steps) == 0 {
-		return []string{ldFaint.Render("(no steps)")}
-	}
-	// Fallback bodies for old entries without BodyPreview
-	bodies := extractBodies(e.Input)
-
-	var lines []string
-	for i, s := range e.Steps {
-		head := fmt.Sprintf("%s %s",
-			ldStepName.Render(s.Name),
-			ldFaint.Render("["+s.Action+"]"))
-
-		target := ""
-		if len(s.Hosts) > 0 {
-			target = ldArrow.Render("→") + " " + ldHostTag.Render(strings.Join(s.Hosts, ", "))
-		}
-
-		first := head
-		if target != "" {
-			first += "  " + target
-		}
-		if ptags := formatParamTags(s.Params); ptags != "" {
-			first += ptags
-		}
-		lines = append(lines, first)
-
-		// body preview — use stored if available, else fallback parse
-		body := s.BodyPreview
-		if body == "" && i < len(bodies) {
-			body = bodies[i]
-		}
-		if body != "" {
-			for _, wrapped := range wrapToWidth(body, w-4) {
-				lines = append(lines, "    "+ldDSLBody.Render(wrapped))
-			}
-		}
-	}
-	return lines
-}
-
-// extractBodies parses raw DSL input and returns the first meaningful script
-// line per step. Used as fallback for old log entries without BodyPreview.
-func extractBodies(input string) []string {
-	var bodies []string
-	var current strings.Builder
-	inStep := false
-	for _, line := range strings.Split(input, "\n") {
-		if strings.HasPrefix(line, "### ") {
-			if inStep {
-				bodies = append(bodies, mcp.FirstScriptLine(current.String()))
-				current.Reset()
-			}
-			inStep = true
-			continue
-		}
-		if inStep {
-			current.WriteString(line)
-			current.WriteByte('\n')
-		}
-	}
-	if inStep {
-		bodies = append(bodies, mcp.FirstScriptLine(current.String()))
-	}
-	return bodies
 }
 
 // ── Detail rendering (no cap) ───────────────────────────────────────
@@ -956,76 +637,6 @@ func (m *ldModel) renderDetailOutput(e *mcp.CallEntry) []string {
 	return lines
 }
 
-// renderLiveCompact is the list-view (compact) variant of renderLiveLines —
-// produces 4–6 lines summarising current step + executing line + last few
-// stdout lines, matching the height budget of the list view.
-func renderLiveCompact(a *activeCall, w int) []string {
-	if a == nil {
-		return []string{ldDim.Render("(no live data)")}
-	}
-	var lines []string
-
-	// One-line status: ● LIVE step N/M name [+Ns]
-	curName := ""
-	curHosts := ""
-	if a.CurrentStep >= 0 && a.CurrentStep < len(a.StepStatuses) {
-		s := a.StepStatuses[a.CurrentStep]
-		curName = s.Name
-		if len(s.Hosts) > 0 {
-			curHosts = ldHostTag.Render(strings.Join(s.Hosts, ","))
-		}
-	}
-	stepFrac := ""
-	if len(a.StepStatuses) > 0 && a.CurrentStep >= 0 {
-		stepFrac = fmt.Sprintf("%d/%d", a.CurrentStep+1, len(a.StepStatuses))
-	}
-	head := fmt.Sprintf("%s %s %s %s",
-		ldLiveDot.Render("●"),
-		ldLive.Render("LIVE"),
-		ldDim.Render(stepFrac),
-		ldLiveStep.Render(curName))
-	if curHosts != "" {
-		head += " " + ldArrow.Render("→") + " " + curHosts
-	}
-	lines = append(lines, head)
-
-	if a.ExecutingCmd != "" {
-		exec := fmt.Sprintf("%s %s",
-			ldDim.Render(fmt.Sprintf("+%ds", a.ExecutingElapsed)),
-			ldLiveExec.Render(ui.TruncLine(a.ExecutingCmd, w-12)))
-		lines = append(lines, "  "+exec)
-	}
-
-	// Last 4 non-executing tail lines
-	const lastN = 4
-	shown := 0
-	picked := make([]tailLine, 0, lastN)
-	for i := len(a.Tail) - 1; i >= 0 && shown < lastN; i-- {
-		if a.Tail[i].Stream == "executing" {
-			continue
-		}
-		picked = append([]tailLine{a.Tail[i]}, picked...)
-		shown++
-	}
-	for _, t := range picked {
-		style := ldLiveStdout
-		if t.Stream == "stderr" {
-			style = ldLiveStderr
-		}
-		lines = append(lines, "  "+style.Render(ui.TruncLine(t.Text, w-4)))
-	}
-
-	if a.Done {
-		marker := ldOk.Render("✓ done")
-		if a.DoneStatus != "" && a.DoneStatus != "ok" {
-			marker = ldFail.Render("✗ " + a.DoneStatus)
-		}
-		lines = append(lines, marker)
-	}
-
-	return lines
-}
-
 // renderLiveLines builds the right-column content for an in-flight call.
 //
 // Layout:
@@ -1144,26 +755,6 @@ func renderLiveLines(a *activeCall, w int) []string {
 	return lines
 }
 
-// ── Header ──────────────────────────────────────────────────────────
-
-func (m ldModel) renderHeader(e *mcp.CallEntry, selected bool) string {
-	badge := statusBadge(e)
-	if m.isActiveID(e.ID) {
-		badge = ldLive.Render("LIVE")
-	}
-	ts := e.Timestamp.Local().Format("2006-01-02 15:04:05")
-	dur := formatDuration(e.DurationMs)
-	sid := ui.TruncOrDash(e.SessionID, 8)
-
-	content := fmt.Sprintf("%s  %s  %s  %s  id:%s",
-		badge, ts, ldAccent.Render(sid), dur, ldDim.Render(e.ID))
-
-	if selected {
-		return m.selectionLine(content)
-	}
-	return "  " + content
-}
-
 // selBgSeq is the raw ANSI sequence for the selection background color.
 // We need this directly because lipgloss.Render() doesn't re-apply background
 // after the inner content emits \x1b[0m resets (lipgloss issue #520).
@@ -1171,13 +762,6 @@ const (
 	selBgSeq    = "\x1b[48;5;24m"
 	ansiResetCS = "\x1b[0m"
 )
-
-// selectionLine wraps content with a full-width selection background and gutter bar.
-// Delegates to selectionLineW (defined in log_dashboard_unified.go) using the
-// model's full width.
-func (m ldModel) selectionLine(content string) string {
-	return selectionLineW(content, m.width)
-}
 
 // ── Column widths ───────────────────────────────────────────────────
 
@@ -1374,32 +958,6 @@ func renderResultLines(e *mcp.CallEntry, w int, stdoutCap int, detailed bool) []
 	}
 
 	return lines
-}
-
-// ── Scroll ──────────────────────────────────────────────────────────
-
-func (m *ldModel) ensureSelectionVisible() {
-	if m.cursor < 0 || m.cursor >= len(m.filtered) {
-		return
-	}
-	if m.cursor >= len(m.entryOffsets) {
-		return // offsets not yet computed
-	}
-
-	offset := m.entryOffsets[m.cursor]
-
-	// Cell height = header + body + separator.
-	cellHeight := 2 // header + separator
-	if c := m.cellCache[m.merged[m.filtered[m.cursor]].ID]; c != nil {
-		cellHeight += len(c.list)
-	}
-	h := m.listVP.Height
-	switch {
-	case offset < m.listVP.YOffset:
-		m.listVP.SetYOffset(offset)
-	case offset+cellHeight > m.listVP.YOffset+h:
-		m.listVP.SetYOffset(offset + cellHeight - h)
-	}
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -1637,7 +1195,7 @@ func (m *ldModel) renderCell(id string) *renderedCell {
 	return cell
 }
 
-// buildCell renders list + left views for one call. The right column
+// buildCell renders the unified left column for one call. The right column
 // (waterfall) is deferred — it involves disk I/O for static calls and is
 // only needed when the entry is selected in unified/detail view.
 func (m *ldModel) buildCell(id string) *renderedCell {
@@ -1662,11 +1220,8 @@ func (m *ldModel) buildCell(id string) *renderedCell {
 		cell.version = a.version.Load()
 	}
 
-	leftW, rightW := m.colWidths()
+	leftW, _ := m.colWidths()
 	rightWEff := m.rightColWidth() // zoom-aware width for right column
-
-	// List view body lines.
-	cell.list = m.renderBody(e, leftW, rightW, maxEntryBodyLines)
 
 	// Unified left column.
 	cell.left = renderUnifiedCell(e, leftW, isActive)

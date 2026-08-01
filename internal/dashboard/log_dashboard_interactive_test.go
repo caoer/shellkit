@@ -115,7 +115,6 @@ func TestCacheLocality(t *testing.T) {
 		// Deep copy the cell content for comparison.
 		before[id] = &renderedCell{
 			version: cell.version,
-			list:    copySlice(cell.list),
 			left:    copySlice(cell.left),
 			right:   copySlice(cell.right),
 		}
@@ -133,9 +132,6 @@ func TestCacheLocality(t *testing.T) {
 			t.Fatalf("renderCell(%q) returned nil after burst", id)
 		}
 		snap := before[id]
-		if !sliceEqual(snap.list, cell.list) {
-			t.Errorf("cache locality violated for %q: list lines changed", id)
-		}
 		if !sliceEqual(snap.left, cell.left) {
 			t.Errorf("cache locality violated for %q: left lines changed", id)
 		}
@@ -236,10 +232,10 @@ func TestBurstResponsiveness(t *testing.T) {
 
 // ── E. Cursor visibility test ────────────────────────────────────────
 
-// TestEnsureSelectionVisible verifies that after pressing down N times,
-// the cursor is at position N and the selected line is within the
-// visible viewport window.
-func TestEnsureSelectionVisible(t *testing.T) {
+// TestUnifiedCursorFollowing verifies that after pressing down N times,
+// the cursor is at position N and the selected cell is within the
+// visible window of the unified left viewport.
+func TestUnifiedCursorFollowing(t *testing.T) {
 	h := newHarness(t, 120, 30) // viewport height = 30 - 3 = 27
 
 	// Seed 100 calls.
@@ -261,33 +257,29 @@ func TestEnsureSelectionVisible(t *testing.T) {
 		t.Errorf("cursor: want 50, got %d", h.m.cursor)
 	}
 
-	// The selected entry's line offset must be within the viewport window.
-	// Calculate the line offset of the cursor entry.
-	offset := 0
-	for fi, ei := range h.m.filtered {
-		if fi == h.m.cursor {
-			break
-		}
-		cell := h.m.renderCell(h.m.merged[ei].ID)
-		offset += 1 + len(cell.list) + 1 // header + body + separator
+	// The selected cell must sit fully inside the viewport window.
+	if h.m.cursor >= len(h.m.unifiedCellStarts) {
+		t.Fatalf("cursor %d beyond cell starts (%d)", h.m.cursor, len(h.m.unifiedCellStarts))
 	}
+	cellStart := h.m.unifiedCellStarts[h.m.cursor]
+	cellEnd := cellStart + unifiedCellHeight + 1
 
-	vpTop := h.m.listVP.YOffset
-	vpBot := vpTop + h.m.listVP.Height
+	vpTop := h.m.unifiedLeftVP.YOffset
+	vpBot := vpTop + h.m.unifiedLeftVP.Height
 
-	if offset < vpTop || offset >= vpBot {
-		t.Errorf("selected line offset %d outside viewport [%d, %d)",
-			offset, vpTop, vpBot)
+	if cellStart < vpTop || cellEnd > vpBot {
+		t.Errorf("selected cell [%d, %d) outside viewport [%d, %d)",
+			cellStart, cellEnd, vpTop, vpBot)
 	}
 
 	// Additional: viewport must have scrolled (YOffset > 0).
-	if h.m.listVP.YOffset == 0 {
-		t.Error("YOffset still 0 after 50 down presses — ensureSelectionVisible not working")
+	if vpTop == 0 {
+		t.Error("YOffset still 0 after 50 down presses — cursor following not working")
 	}
 }
 
-// TestEnsureSelectionVisible_EdgeCases tests cursor at boundaries.
-func TestEnsureSelectionVisible_EdgeCases(t *testing.T) {
+// TestUnifiedCursorFollowing_EdgeCases tests cursor at boundaries.
+func TestUnifiedCursorFollowing_EdgeCases(t *testing.T) {
 	h := newHarness(t, 120, 30)
 	seedCalls(h, 100)
 
@@ -302,8 +294,8 @@ func TestEnsureSelectionVisible_EdgeCases(t *testing.T) {
 	if h.m.cursor != 0 {
 		t.Errorf("g: cursor want 0, got %d", h.m.cursor)
 	}
-	if h.m.listVP.YOffset != 0 {
-		t.Errorf("g: YOffset want 0, got %d", h.m.listVP.YOffset)
+	if h.m.unifiedLeftVP.YOffset != 0 {
+		t.Errorf("g: YOffset want 0, got %d", h.m.unifiedLeftVP.YOffset)
 	}
 }
 

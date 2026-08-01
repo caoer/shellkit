@@ -98,13 +98,8 @@ func renderMerged(ids []string, opts renderOpts) error {
 	m := ldInitialModel()
 	m.width = opts.width
 	m.height = opts.height
-	switch opts.view {
-	case "detail":
+	if opts.view == "detail" {
 		m.view = ldViewDetail
-	case "unified":
-		m.view = ldViewUnified
-	default:
-		m.view = ldViewList
 	}
 	mi, _ := m.Update(tea.WindowSizeMsg{Width: opts.width, Height: opts.height})
 	m = mi.(ldModel)
@@ -144,13 +139,8 @@ func renderOne(callID string, opts renderOpts) error {
 	m.height = opts.height
 
 	// Set view mode
-	switch opts.view {
-	case "detail":
+	if opts.view == "detail" {
 		m.view = ldViewDetail
-	case "unified":
-		m.view = ldViewUnified
-	default:
-		m.view = ldViewList
 	}
 
 	// Initial size + entries (synth calls.jsonl entry for completed calls)
@@ -251,7 +241,7 @@ func discoverCallIDs() ([]string, error) {
 
 func viewLabel(v string) string {
 	if v == "" {
-		return "list"
+		return "unified"
 	}
 	return v
 }
@@ -339,7 +329,12 @@ func RunRenderDashboard(args []string) error {
 	}
 
 	if !opts.all && len(opts.callIDs) == 0 {
-		return fmt.Errorf("usage: shellkit mcp render-dashboard [--all|<call-id>...] [--view=list|detail|unified] [--width=N] [--height=N] [--frame=N|--frames] [--no-ansi]")
+		return fmt.Errorf("usage: shellkit mcp render-dashboard [--all|<call-id>...] [--view=unified|detail] [--width=N] [--height=N] [--frame=N|--frames] [--no-ansi]")
+	}
+	switch opts.view {
+	case "", "unified", "detail":
+	default:
+		return fmt.Errorf("unknown view %q (want unified or detail)", opts.view)
 	}
 
 	return RenderDashboard(opts)

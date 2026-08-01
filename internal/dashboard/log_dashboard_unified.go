@@ -681,10 +681,14 @@ func (m ldModel) viewUnified() string {
 	if m.zoomed {
 		zoom = "  " + ldAccent.Render("[ZOOM]")
 	}
+	clear := ""
+	if m.filter.Value() != "" {
+		clear = "  [esc]clear"
+	}
 	lag := m.lagIndicator()
 	b.WriteString(ldBar.Render(fmt.Sprintf(
-		" [j/k]nav  [C-d/u]scroll  [D]detail  [tab]layout  [z]zoom  [/]search  [esc]list  [q]uit  %d/%d%s ",
-		cur, len(m.filtered), pos)) + zoom + lag)
+		" [j/k]nav  [C-d/u]scroll  [D]detail  [tab]layout  [z]zoom  [/]search%s  [q]uit  %d/%d%s ",
+		clear, cur, len(m.filtered), pos)) + zoom + lag)
 	return b.String()
 }
 
@@ -748,9 +752,13 @@ func (m ldModel) handleUnifiedKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	case "esc":
-		m.view = ldViewList
-		m.refreshListView()
-		return m, nil
+		// Unified is the entry view — esc clears an active filter and
+		// otherwise does nothing. q / ctrl+c are the only way out.
+		if m.filter.Value() != "" {
+			m.filter.SetValue("")
+			m.rebuildFiltered()
+			m.refreshUnifiedView()
+		}
 	case "up", "k":
 		if m.cursor > 0 {
 			m.cursor--
