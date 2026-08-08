@@ -929,19 +929,3 @@ func printCheckJSONLine(r sshconn.ProbeResult) {
 	}
 	writeJSON(entry)
 }
-
-func printCheckJSON(results []sshconn.ProbeResult) {
-	out := make([]checkEntryJSON, 0, len(results))
-	for _, r := range results {
-		out = append(out, checkEntryJSON{
-			Provider:  r.Server.Provider,
-			Name:      r.Server.Name,
-			IP:        r.Server.IP,
-			Status:    r.Status.String(),
-			LatencyMs: r.Latency.Milliseconds(),
-			Key:       r.KeyUsed,
-			ExtraKeys: r.ExtraKeys,
-		})
-	}
-	writeJSON(out)
-}

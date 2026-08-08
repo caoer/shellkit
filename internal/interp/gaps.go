@@ -55,10 +55,8 @@ func detectGaps(file *syntax.File) Verdict {
 			}
 
 		case *syntax.DeclClause:
-			if x.Variant != nil && x.Variant.Value == "export" {
-				// export FOO=... as a keyword works under interp; only the
-				// assignment target matters for the IFS screen.
-			}
+			// export FOO=... as a keyword works under interp; only the
+			// assignment target matters for the IFS screen.
 			if declAssignsIFS(x) {
 				hasIFSAssign = true
 			}
