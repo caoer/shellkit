@@ -136,6 +136,13 @@ entrypoints, and the full tmux verb reference.`),
 		// Progress: emit periodic MCP notifications with live output
 		// summary (step name, executing command, last N stdout lines).
 		// 3s interval keeps output feeling live for long-running commands.
+		//
+		// The token MUST be the one the client sent in _meta.progressToken —
+		// clients route progress by that token and DROP notifications with an
+		// unknown one. Claude Code then sees "no response or progress" and
+		// aborts the call at its 300s idle timeout, however hard we tick.
+		// Fall back to callID only when the client didn't request progress.
+		progressToken := progressTokenFromRequest(req, callID)
 		keepaliveDone := make(chan struct{})
 		if mcpSrv := server.ServerFromContext(ctx); mcpSrv != nil {
 			go func() {
@@ -146,7 +153,7 @@ entrypoints, and the full tmux verb reference.`),
 					case <-ticker.C:
 						elapsed := int(time.Since(start).Seconds())
 						_ = mcpSrv.SendNotificationToClient(ctx, "notifications/progress", map[string]any{
-							"progressToken": callID,
+							"progressToken": progressToken,
 							"progress":      elapsed,
 							"message":       stream.ProgressSummary(elapsed),
 						})
@@ -188,6 +195,17 @@ entrypoints, and the full tmux verb reference.`),
 	})
 
 	return s
+}
+
+// progressTokenFromRequest returns the client's _meta.progressToken from the
+// tool-call request, or fallback when the client didn't send one. Progress
+// notifications carrying any other token are dropped by spec-conforming
+// clients (they route progress to the originating request by this token).
+func progressTokenFromRequest(req mcp.CallToolRequest, fallback any) any {
+	if req.Params.Meta != nil && req.Params.Meta.ProgressToken != nil {
+		return req.Params.Meta.ProgressToken
+	}
+	return fallback
 }
 
 func RunMCP(store *inventory.InventoryStore) error {
