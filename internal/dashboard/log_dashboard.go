@@ -22,49 +22,58 @@ import (
 )
 
 // ── Styles ──────────────────────────────────────────────────────────
-// Tokyo-Night-inspired palette tuned for dark terminals.
-// Color reference (ANSI 256):
-//   text   primary 252  dim 244  faint 240
-//   accent blue   111   cyan 117  purple 141
-//   status ok 114  warn 215  fail 203
-//   tags   step 213 (pink)  host 215 (orange)
-//   bg     statusbar 237  selection 24 (deep blue, visible but not harsh)
+// Tokyo-Night-inspired palette, adaptive to the terminal background.
+// Every color is an AdaptiveColor{Light, Dark} pair: the Dark side keeps the
+// original palette tuned for dark terminals; the Light side swaps in darker
+// counterparts readable on white. lipgloss detects the background once at
+// first render (non-tty output defaults to the dark palette).
+// Color reference (ANSI 256), dark / light:
+//   text   primary 252/235  dim 244/243  faint 240/248
+//   accent blue   111/26    cyan 117/31  purple 141/55
+//   status ok 114/28  warn 215/130  fail 203/160
+//   tags   step 213/162 (pink)  host 215/130 (orange)
+//   bg     statusbar 237/254  selection 24/153 (blue, visible but not harsh)
+
+// ac builds an adaptive color: light-terminal value first, dark second.
+func ac(light, dark string) lipgloss.AdaptiveColor {
+	return lipgloss.AdaptiveColor{Light: light, Dark: dark}
+}
 
 var (
-	ldTitle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("111"))
-	ldDim    = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
-	ldFaint  = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	ldOk     = lipgloss.NewStyle().Foreground(lipgloss.Color("114")).Bold(true)
-	ldFail   = lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
-	ldWarn   = lipgloss.NewStyle().Foreground(lipgloss.Color("215"))
-	ldAccent = lipgloss.NewStyle().Foreground(lipgloss.Color("117"))
+	ldTitle  = lipgloss.NewStyle().Bold(true).Foreground(ac("26", "111"))
+	ldDim    = lipgloss.NewStyle().Foreground(ac("243", "244"))
+	ldFaint  = lipgloss.NewStyle().Foreground(ac("248", "240"))
+	ldOk     = lipgloss.NewStyle().Foreground(ac("28", "114")).Bold(true)
+	ldFail   = lipgloss.NewStyle().Foreground(ac("160", "203")).Bold(true)
+	ldWarn   = lipgloss.NewStyle().Foreground(ac("130", "215"))
+	ldAccent = lipgloss.NewStyle().Foreground(ac("31", "117"))
 
-	ldBar     = lipgloss.NewStyle().Background(lipgloss.Color("237")).Foreground(lipgloss.Color("252"))
-	ldSection = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("141"))
-	ldBorder  = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
-	ldColSep  = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	ldBar     = lipgloss.NewStyle().Background(ac("254", "237")).Foreground(ac("235", "252"))
+	ldSection = lipgloss.NewStyle().Bold(true).Foreground(ac("55", "141"))
+	ldBorder  = lipgloss.NewStyle().Foreground(ac("250", "238"))
+	ldColSep  = lipgloss.NewStyle().Foreground(ac("250", "238"))
 
-	ldStepName = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("213"))
-	ldHostTag  = lipgloss.NewStyle().Foreground(lipgloss.Color("215"))
-	ldErrTag   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("203"))
-	ldStdout   = lipgloss.NewStyle().Foreground(lipgloss.Color("250")) // readable on dark bg
-	ldArrow    = lipgloss.NewStyle().Foreground(lipgloss.Color("141"))
+	ldStepName = lipgloss.NewStyle().Bold(true).Foreground(ac("162", "213"))
+	ldHostTag  = lipgloss.NewStyle().Foreground(ac("130", "215"))
+	ldErrTag   = lipgloss.NewStyle().Bold(true).Foreground(ac("160", "203"))
+	ldStdout   = lipgloss.NewStyle().Foreground(ac("238", "250")) // body text vs terminal bg
+	ldArrow    = lipgloss.NewStyle().Foreground(ac("55", "141"))
 
 	// DSL syntax: ### header (pink bold), {json} (cyan), body (off-white)
-	ldDSLHead = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("213"))
-	ldDSLConf = lipgloss.NewStyle().Foreground(lipgloss.Color("117"))
-	ldDSLBody = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	ldDSLHead = lipgloss.NewStyle().Bold(true).Foreground(ac("162", "213"))
+	ldDSLConf = lipgloss.NewStyle().Foreground(ac("31", "117"))
+	ldDSLBody = lipgloss.NewStyle().Foreground(ac("235", "252"))
 
 	// selection: bright cyan gutter
-	ldSelGutter = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+	ldSelGutter = lipgloss.NewStyle().Foreground(ac("31", "117")).Bold(true)
 
 	// live indicators
-	ldLive       = lipgloss.NewStyle().Bold(true).Background(lipgloss.Color("203")).Foreground(lipgloss.Color("231"))
-	ldLiveDot    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("203"))
-	ldLiveExec   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("215"))
-	ldLiveStdout = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
-	ldLiveStderr = lipgloss.NewStyle().Foreground(lipgloss.Color("215"))
-	ldLiveStep   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("117"))
+	ldLive       = lipgloss.NewStyle().Bold(true).Background(ac("160", "203")).Foreground(lipgloss.Color("231")) // white-on-red both ways
+	ldLiveDot    = lipgloss.NewStyle().Bold(true).Foreground(ac("160", "203"))
+	ldLiveExec   = lipgloss.NewStyle().Bold(true).Foreground(ac("130", "215"))
+	ldLiveStdout = lipgloss.NewStyle().Foreground(ac("238", "250"))
+	ldLiveStderr = lipgloss.NewStyle().Foreground(ac("130", "215"))
+	ldLiveStep   = lipgloss.NewStyle().Bold(true).Foreground(ac("31", "117"))
 )
 
 // ── Layout modes ────────────────────────────────────────────────────
@@ -758,10 +767,17 @@ func renderLiveLines(a *activeCall, w int) []string {
 // selBgSeq is the raw ANSI sequence for the selection background color.
 // We need this directly because lipgloss.Render() doesn't re-apply background
 // after the inner content emits \x1b[0m resets (lipgloss issue #520).
-const (
-	selBgSeq    = "\x1b[48;5;24m"
-	ansiResetCS = "\x1b[0m"
-)
+// Raw sequences bypass lipgloss, so background adaptation is done by hand:
+// deep blue (24) on dark terminals, pale blue (153) on light. Detection is
+// cached by termenv, so calling per render line is cheap.
+func selBgSeq() string {
+	if lipgloss.HasDarkBackground() {
+		return "\x1b[48;5;24m"
+	}
+	return "\x1b[48;5;153m"
+}
+
+const ansiResetCS = "\x1b[0m"
 
 // ── Column widths ───────────────────────────────────────────────────
 

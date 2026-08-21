@@ -24,26 +24,27 @@ import (
 
 // ── Styles ─────────────────────────────────────────────────────────────
 
+// Adaptive light/dark pairs — see the palette note in log_dashboard.go.
 var (
-	wfPending = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))            // grey
-	wfDoneCmd = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))            // dim white
-	wfExecCmd = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("231")) // bright bold
-	wfSubLine = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))            // dimmer for sub-cmd detail
-	wfTimer   = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))            // static timer
-	wfTimerOn = lipgloss.NewStyle().Foreground(lipgloss.Color("117"))            // live timer (cyan)
-	// Output block: near-black inset (#121212) with ▐ gutter bar.
-	// Alternative blue tint: Background(lipgloss.Color("#161622"))
-	wfOutput    = lipgloss.NewStyle().Foreground(lipgloss.Color("#c0caf5")).Background(lipgloss.Color("#1a2040"))
-	wfOutErr    = lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e")).Background(lipgloss.Color("#1a2040"))
-	wfOutGutter = lipgloss.NewStyle().Foreground(lipgloss.Color("60"))
-	wfErrGutter = lipgloss.NewStyle().Foreground(lipgloss.Color("131"))
-	wfStepHdr   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("213")) // pink
-	wfRail      = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))            // ┌ │ └
-	wfSepLine   = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))            // ╌╌╌ separator
-	wfSepTime   = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))            // cumulative time on separator
-	wfOpBadge   = lipgloss.NewStyle().Foreground(lipgloss.Color("141"))            // operator label
-	wfRepeat    = lipgloss.NewStyle().Foreground(lipgloss.Color("141"))            // ↻ for repeated subs (loops)
-	wfRepCount  = lipgloss.NewStyle().Foreground(lipgloss.Color("215"))            // [×N] count badge
+	wfPending = lipgloss.NewStyle().Foreground(ac("248", "240"))           // grey
+	wfDoneCmd = lipgloss.NewStyle().Foreground(ac("238", "250"))           // dim body text
+	wfExecCmd = lipgloss.NewStyle().Bold(true).Foreground(ac("16", "231")) // high-contrast bold
+	wfSubLine = lipgloss.NewStyle().Foreground(ac("243", "244"))           // dimmer for sub-cmd detail
+	wfTimer   = lipgloss.NewStyle().Foreground(ac("243", "244"))           // static timer
+	wfTimerOn = lipgloss.NewStyle().Foreground(ac("31", "117"))            // live timer (cyan)
+	// Output block: blue-tinted inset with ▐ gutter bar. Dark: Tokyo Night
+	// (#c0caf5 on #1a2040); light: Tokyo Night Day (#343b58 on #e1e2e7).
+	wfOutput    = lipgloss.NewStyle().Foreground(ac("#343b58", "#c0caf5")).Background(ac("#e1e2e7", "#1a2040"))
+	wfOutErr    = lipgloss.NewStyle().Foreground(ac("#8c4351", "#f7768e")).Background(ac("#e1e2e7", "#1a2040"))
+	wfOutGutter = lipgloss.NewStyle().Foreground(lipgloss.Color("60"))        // mid-tone, works on both backgrounds
+	wfErrGutter = lipgloss.NewStyle().Foreground(lipgloss.Color("131"))       // mid-tone, works on both backgrounds
+	wfStepHdr   = lipgloss.NewStyle().Bold(true).Foreground(ac("162", "213")) // pink
+	wfRail      = lipgloss.NewStyle().Foreground(ac("250", "238"))            // ┌ │ └
+	wfSepLine   = lipgloss.NewStyle().Foreground(ac("250", "238"))            // ╌╌╌ separator
+	wfSepTime   = lipgloss.NewStyle().Foreground(ac("243", "244"))            // cumulative time on separator
+	wfOpBadge   = lipgloss.NewStyle().Foreground(ac("55", "141"))             // operator label
+	wfRepeat    = lipgloss.NewStyle().Foreground(ac("55", "141"))             // ↻ for repeated subs (loops)
+	wfRepCount  = lipgloss.NewStyle().Foreground(ac("130", "215"))            // [×N] count badge
 )
 
 // ── Constants ──────────────────────────────────────────────────────────
@@ -510,13 +511,14 @@ func selectionLineW(content string, w int) string {
 	if target < 1 {
 		return gutter
 	}
-	patched := strings.ReplaceAll(content, ansiResetCS, ansiResetCS+selBgSeq)
+	selBg := selBgSeq()
+	patched := strings.ReplaceAll(content, ansiResetCS, ansiResetCS+selBg)
 	visW := ui.VisibleLen(content) + 1
 	pad := ""
 	if visW < target {
 		pad = strings.Repeat(" ", target-visW)
 	}
-	return gutter + selBgSeq + " " + patched + pad + ansiResetCS
+	return gutter + selBg + " " + patched + pad + ansiResetCS
 }
 
 // ── Unified view: model integration ────────────────────────────────────
