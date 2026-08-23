@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/caoer/shellkit/internal/dashboard"
@@ -74,8 +75,72 @@ var version = "dev"
 // -ldflags "-X main.gitCommit=<hash>".
 var gitCommit = "unknown"
 
+// topCommands and mcpSubcommands are the accepted verbs, in help order. They
+// back the did-you-mean hint on a typo; "logs" (alias of log-dashboard) is
+// omitted on purpose so the hint never names an undocumented spelling.
+var topCommands = []string{"list", "check", "ssh", "generate-configs", "version", "tui", "mcp"}
+
+var mcpSubcommands = []string{"stdio", "serve", "start", "stop", "restart", "status", "log-dashboard", "render-dashboard"}
+
+// nearest returns the candidate closest to input by edit distance, or "" when
+// nothing is close enough. The budget scales with input length (min 1 edit, and
+// never more than a third of the word) so a real typo gets a suggestion while a
+// wild guess gets the full list instead of a misleading one.
+func nearest(input string, candidates []string) string {
+	in := strings.ToLower(input)
+	budget := len(in) / 3
+	if budget < 1 {
+		budget = 1
+	}
+	best, bestDist := "", budget+1
+	for _, c := range candidates {
+		if d := editDistance(in, strings.ToLower(c)); d < bestDist {
+			best, bestDist = c, d
+		}
+	}
+	return best
+}
+
+// editDistance is Levenshtein distance (a transposition counts as 2 edits).
+func editDistance(a, b string) int {
+	ar, br := []rune(a), []rune(b)
+	prev := make([]int, len(br)+1)
+	curr := make([]int, len(br)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(ar); i++ {
+		curr[0] = i
+		for j := 1; j <= len(br); j++ {
+			cost := 1
+			if ar[i-1] == br[j-1] {
+				cost = 0
+			}
+			curr[j] = min(min(curr[j-1]+1, prev[j]+1), prev[j-1]+cost)
+		}
+		prev, curr = curr, prev
+	}
+	return prev[len(br)]
+}
+
+// unknownVerb reports a mistyped command on stderr: the bad input, the closest
+// valid verb when there is one, and the full list. Never exits — the caller
+// decides the exit code.
+func unknownVerb(label, input, prefix string, candidates []string) {
+	fmt.Fprintf(os.Stderr, "unknown %s: %s\n", label, input)
+	if s := nearest(input, candidates); s != "" {
+		fmt.Fprintf(os.Stderr, "did you mean: %s%s\n", prefix, s)
+	}
+	fmt.Fprintf(os.Stderr, "valid: %s\n", strings.Join(candidates, ", "))
+}
+
 func usage() {
-	fmt.Fprintf(os.Stderr, `shellkit — SSH server inventory & connectivity checker
+	usageTo(os.Stderr)
+	os.Exit(0)
+}
+
+func usageTo(w *os.File) {
+	fmt.Fprintf(w, `shellkit — SSH server inventory & connectivity checker
 
 Usage:
   shellkit                    Interactive TUI (default)
@@ -110,7 +175,6 @@ Environment:
   SHELLKIT_MCP_PORT               MCP HTTP port (default: 19222)
   SHELLKIT_MCP_TOKEN              Bearer token for the MCP HTTP server
 `)
-	os.Exit(0)
 }
 
 // extractGlobalFlags pulls -f/--json/-h from anywhere in args, regardless of
@@ -217,7 +281,7 @@ func main() {
 	// Daemon-management subcommands (stop, status, restart, log-dashboard,
 	// render-dashboard) don't need the inventory — skip the check so they
 	// work from any cwd.
-	if inventoryPath == "" && !mcpNoInventorySubcmd(rest) {
+	if inventoryPath == "" && !mcpNoInventorySubcmd(rest) && !unknownTopVerb(rest) {
 		fmt.Fprint(os.Stderr, noInventoryHelp)
 		os.Exit(1)
 	}
@@ -303,23 +367,34 @@ func main() {
 	case "mcp":
 		mcpSubcmd(servers, inventoryPath, rest)
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
-		usage()
+		unknownVerb("command", cmd, "shellkit ", topCommands)
+		fmt.Fprintln(os.Stderr)
+		usageTo(os.Stderr)
+		os.Exit(1)
 	}
 }
 
+// unknownTopVerb reports whether the first positional is not a known command,
+// so a typo can be answered as a typo instead of as "no SSH inventory found".
+// The switch in main() prints the message; this only opens the gate.
+func unknownTopVerb(args []string) bool {
+	return len(args) > 0 && !slices.Contains(topCommands, args[0])
+}
+
 // mcpNoInventorySubcmd returns true when the command-line arguments point at
-// an MCP subcommand that does not need the SSH inventory (stop, status,
-// restart, log-dashboard, render-dashboard).
+// an MCP subcommand that does not need the SSH inventory. Only the subcommands
+// that actually serve hosts (stdio, serve, start) need it — everything else,
+// including a typo, is better answered by its own message than by the
+// "no SSH inventory found" wall.
 func mcpNoInventorySubcmd(args []string) bool {
 	if len(args) < 2 || args[0] != "mcp" {
 		return false
 	}
 	switch args[1] {
-	case "stop", "status", "restart", "log-dashboard", "render-dashboard":
-		return true
+	case "stdio", "serve", "start":
+		return false
 	}
-	return false
+	return true
 }
 
 func mcpSubcmd(servers []inventory.Server, inventoryPath string, args []string) {
@@ -397,7 +472,7 @@ func mcpSubcmd(servers []inventory.Server, inventoryPath string, args []string) 
 			os.Exit(1)
 		}
 	default:
-		fmt.Fprintf(os.Stderr, "unknown mcp subcommand: %s\n", subcmd)
+		unknownVerb("mcp subcommand", subcmd, "shellkit mcp ", mcpSubcommands)
 		os.Exit(1)
 	}
 }
