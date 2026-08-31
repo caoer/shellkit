@@ -216,6 +216,18 @@ func NewExecutor(store *OutputStore, servers []inventory.Server) *Executor {
 	}
 }
 
+// noInventoryHint explains an unresolved host name when this server carries no
+// inventory at all — the common case on a UCC host, where shellkit's MCP server
+// is registered unconditionally and only some machines have a Nix inventory.
+// Without it an agent reads "unknown host" as a typo and hunts for one. Empty
+// when hosts are loaded, so an ordinary typo keeps its terse message.
+func (e *Executor) noInventoryHint() string {
+	if len(e.servers) > 0 {
+		return ""
+	}
+	return " — this host has no SSH inventory loaded, so only raw user@host targets and ~/.ssh/config aliases resolve. Set SHELLKIT_INVENTORY to a .nix file exposing a hosts attribute set to address hosts by name."
+}
+
 func (e *Executor) Execute(ctx context.Context, steps []Step) ([]StepResult, error) {
 	var results []StepResult
 	stream := eventStreamFromContext(ctx)
@@ -321,7 +333,7 @@ func (e *Executor) executeSSH(ctx context.Context, stepIdx int, step *Step) ([]S
 	for _, host := range hosts {
 		srv := e.resolveSSHHost(host)
 		if srv == nil {
-			return nil, fmt.Errorf("step %q: unknown host %q", step.Name, host)
+			return nil, fmt.Errorf("step %q: unknown host %q%s", step.Name, host, e.noInventoryHint())
 		}
 
 		// DSL "jump" overrides the server's ProxyJump, letting agents hop
@@ -1080,7 +1092,7 @@ func (e *Executor) executeTmux(ctx context.Context, stepIdx int, step *Step) ([]
 		}
 		srv := e.resolveSSHHost(host)
 		if srv == nil {
-			return StepResult{}, fmt.Errorf("unknown host %q", host)
+			return StepResult{}, fmt.Errorf("unknown host %q%s", host, e.noInventoryHint())
 		}
 		if step.Config.Jump != "" {
 			srv.ProxyJump = step.Config.Jump

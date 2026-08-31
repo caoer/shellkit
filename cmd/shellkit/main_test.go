@@ -28,25 +28,32 @@ func TestNearest(t *testing.T) {
 	}
 }
 
-// The inventory gate must let a typo through to its own error message, and
-// still hold back the subcommands that actually serve hosts.
-func TestMCPNoInventorySubcmd(t *testing.T) {
-	needsInventory := []string{"stdio", "serve", "start"}
-	for _, sub := range needsInventory {
-		if mcpNoInventorySubcmd([]string{"mcp", sub}) {
-			t.Errorf("mcp %s should require the inventory", sub)
+// The MCP server is registered unconditionally on every UCC host, so no `mcp`
+// subcommand may exit on a missing inventory — it serves with zero inventory
+// hosts and still reaches raw `user@host` targets and ~/.ssh/config aliases.
+// Every other verb keeps the inventory wall.
+func TestMCPVerbNeverRequiresInventory(t *testing.T) {
+	subs := []string{
+		"", "stdio", "serve", "start",
+		"stop", "status", "restart", "log-dashboard", "render-dashboard",
+		"log-dashbaord", // a typo answers with its own message, not the wall
+	}
+	for _, sub := range subs {
+		args := []string{"mcp"}
+		if sub != "" {
+			args = append(args, sub)
+		}
+		if !mcpVerb(args) {
+			t.Errorf("mcp %q must not require the inventory", sub)
 		}
 	}
-	skipsInventory := []string{"stop", "status", "restart", "log-dashboard", "render-dashboard", "log-dashbaord"}
-	for _, sub := range skipsInventory {
-		if !mcpNoInventorySubcmd([]string{"mcp", sub}) {
-			t.Errorf("mcp %s should not require the inventory", sub)
+	for _, cmd := range []string{"list", "check", "ssh", "generate-configs", ""} {
+		var args []string
+		if cmd != "" {
+			args = []string{cmd}
 		}
-	}
-	if mcpNoInventorySubcmd([]string{"mcp"}) {
-		t.Error("bare `mcp` (stdio) should require the inventory")
-	}
-	if mcpNoInventorySubcmd([]string{"list"}) {
-		t.Error("non-mcp commands should not be treated as inventory-free")
+		if mcpVerb(args) {
+			t.Errorf("%q is not the mcp verb and must keep the inventory wall", cmd)
+		}
 	}
 }

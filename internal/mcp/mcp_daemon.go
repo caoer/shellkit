@@ -107,6 +107,35 @@ func mcpHealthCheck(url, token string) (*http.Response, error) {
 	return http.DefaultClient.Do(req)
 }
 
+// serveInvocation builds the argv (after the executable) and working directory
+// for the `mcp serve` child that `mcp start` daemonizes.
+//
+// With an inventory the child is pinned to its absolute path and started in
+// that file's directory, so relative "sops:" password_ref paths resolve.
+//
+// With NO inventory the child gets no -f at all. filepath.Abs("") returns the
+// current directory, so forwarding it would hand the child `-f <cwd>` — a
+// directory, which LoadInventory rejects as an unsupported format — and the
+// daemon would exit immediately on every host without an inventory. The child
+// then serves from the home directory with zero inventory hosts.
+func serveInvocation(inventoryPath string, port int) (args []string, workDir string, err error) {
+	tail := []string{"mcp", "serve", "-p", strconv.Itoa(port)}
+
+	if inventoryPath == "" {
+		home, herr := os.UserHomeDir()
+		if herr != nil {
+			return nil, "", fmt.Errorf("resolve home directory: %w", herr)
+		}
+		return tail, home, nil
+	}
+
+	abs, aerr := filepath.Abs(inventoryPath)
+	if aerr != nil {
+		return nil, "", fmt.Errorf("resolve inventory path: %w", aerr)
+	}
+	return append([]string{"-f", abs}, tail...), filepath.Dir(abs), nil
+}
+
 func Start(inventoryPath string, port int) error {
 	if pid, err := readPid(); err == nil && isRunning(pid) {
 		return fmt.Errorf("already running (pid %d) on %s\nuse 'shellkit mcp restart' to restart", pid, mcpURL(port))
@@ -117,9 +146,9 @@ func Start(inventoryPath string, port int) error {
 		return err
 	}
 
-	absInventory, err := filepath.Abs(inventoryPath)
+	serveArgs, serveDir, err := serveInvocation(inventoryPath, port)
 	if err != nil {
-		return fmt.Errorf("resolve inventory path: %w", err)
+		return err
 	}
 
 	self, err := os.Executable()
@@ -133,12 +162,11 @@ func Start(inventoryPath string, port int) error {
 		return fmt.Errorf("open log: %w", err)
 	}
 
-	cmd := exec.Command(self, "-f", absInventory, "mcp", "serve",
-		"-p", strconv.Itoa(port))
+	cmd := exec.Command(self, serveArgs...)
 	cmd.Stdout = logF
 	cmd.Stderr = logF
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Dir = filepath.Dir(absInventory)
+	cmd.Dir = serveDir
 
 	if err := cmd.Start(); err != nil {
 		logF.Close()

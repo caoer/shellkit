@@ -278,10 +278,14 @@ func main() {
 		}
 	}
 
-	// Daemon-management subcommands (stop, status, restart, log-dashboard,
-	// render-dashboard) don't need the inventory — skip the check so they
-	// work from any cwd.
-	if inventoryPath == "" && !mcpNoInventorySubcmd(rest) && !unknownTopVerb(rest) {
+	// No `mcp` subcommand exits on a missing inventory. The MCP server is
+	// registered on every UCC host, most of which carry no Nix inventory, and
+	// shellkit reaches raw "user@host" targets and ~/.ssh/config aliases
+	// without one — so the server opens with zero inventory hosts, and a step
+	// naming an inventory host is told why the name did not resolve. The
+	// daemon-management subcommands (stop, status, log-dashboard, ...) never
+	// needed it either, and a typo is answered by its own message.
+	if inventoryPath == "" && !mcpVerb(rest) && !unknownTopVerb(rest) {
 		fmt.Fprint(os.Stderr, noInventoryHelp)
 		os.Exit(1)
 	}
@@ -381,20 +385,34 @@ func unknownTopVerb(args []string) bool {
 	return len(args) > 0 && !slices.Contains(topCommands, args[0])
 }
 
-// mcpNoInventorySubcmd returns true when the command-line arguments point at
-// an MCP subcommand that does not need the SSH inventory. Only the subcommands
-// that actually serve hosts (stdio, serve, start) need it — everything else,
-// including a typo, is better answered by its own message than by the
-// "no SSH inventory found" wall.
-func mcpNoInventorySubcmd(args []string) bool {
-	if len(args) < 2 || args[0] != "mcp" {
-		return false
+// mcpVerb reports whether the command line is the `mcp` verb, in any of its
+// subcommands. The whole verb is exempt from the "no SSH inventory found" wall
+// — the serving subcommands open an empty store, the rest never touched the
+// inventory — so that the MCP server registers on every host.
+func mcpVerb(args []string) bool {
+	return len(args) > 0 && args[0] == "mcp"
+}
+
+// openMCPStore builds the inventory store the MCP server serves from. With no
+// inventory file on this host the store opens EMPTY instead of exiting: raw
+// "user@host" targets and ~/.ssh/config aliases resolve without an inventory,
+// so the server stays useful and a step that names an inventory host is told
+// what is missing. A path that exists but cannot be read is still fatal — that
+// is a broken inventory, not an absent one.
+func openMCPStore(inventoryPath string) *inventory.InventoryStore {
+	if inventoryPath == "" {
+		fmt.Fprintln(os.Stderr, "warning: no SSH inventory found — serving with zero inventory hosts. Raw user@host targets and ~/.ssh/config aliases still work; set SHELLKIT_INVENTORY to serve named hosts.")
+		return inventory.NewEmptyStore()
 	}
-	switch args[1] {
-	case "stdio", "serve", "start":
-		return false
+	store, err := inventory.NewInventoryStore(inventoryPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "mcp error: %v\n", err)
+		os.Exit(1)
 	}
-	return true
+	if err := store.StartWatcher(); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: file watcher failed: %v (continuing without live reload)\n", err)
+	}
+	return store
 }
 
 func mcpSubcmd(servers []inventory.Server, inventoryPath string, args []string) {
@@ -424,27 +442,13 @@ func mcpSubcmd(servers []inventory.Server, inventoryPath string, args []string) 
 
 	switch subcmd {
 	case "", "stdio":
-		store, err := inventory.NewInventoryStore(inventoryPath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "mcp error: %v\n", err)
-			os.Exit(1)
-		}
-		if err := store.StartWatcher(); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: file watcher failed: %v (continuing without live reload)\n", err)
-		}
+		store := openMCPStore(inventoryPath)
 		if err := mcp.RunMCP(store); err != nil {
 			fmt.Fprintf(os.Stderr, "mcp error: %v\n", err)
 			os.Exit(1)
 		}
 	case "serve":
-		store, err := inventory.NewInventoryStore(inventoryPath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "mcp error: %v\n", err)
-			os.Exit(1)
-		}
-		if err := store.StartWatcher(); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: file watcher failed: %v (continuing without live reload)\n", err)
-		}
+		store := openMCPStore(inventoryPath)
 		if err := mcp.RunMCPHTTP(store, *port); err != nil {
 			fmt.Fprintf(os.Stderr, "mcp error: %v\n", err)
 			os.Exit(1)

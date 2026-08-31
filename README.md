@@ -43,7 +43,9 @@ A [Nix](https://nixos.org/) flake is provided for a reproducible dev shell —
 
 > **Runtime requirement:** shellkit reads its inventory by shelling out to
 > `nix eval`, so `nix` must be on `PATH` at runtime — even for a plain
-> `go build`. See [Optional dependencies](#optional-dependencies) for the rest.
+> `go build`. A host with no inventory needs no `nix`: `shellkit mcp` serves
+> with zero inventory hosts. See
+> [Optional dependencies](#optional-dependencies) for the rest.
 
 ## Inventory
 
@@ -80,6 +82,11 @@ export SHELLKIT_INVENTORY=./inventory.nix
 If neither is set, shellkit searches the current directory upward for
 `shellkit.nix`, `inventory.nix`, `hosts.nix`, or `lib/ssh/hosts/default.nix`,
 and fails with guidance when none is found.
+
+The `mcp` verb is the exception: it serves with zero inventory hosts rather
+than failing, because raw `user@host` targets and `~/.ssh/config` aliases
+resolve without an inventory. Addressing a host by its inventory name is what
+needs one, and that failure names the missing inventory.
 
 ## Usage
 

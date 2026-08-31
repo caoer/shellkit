@@ -20,6 +20,22 @@ type InventoryStore struct {
 	path    string
 }
 
+// NewEmptyStore returns a store with no inventory file behind it, for a host
+// where none was found. The MCP server opens on it instead of exiting:
+// shellkit resolves raw "user@host" targets and ~/.ssh/config aliases with no
+// inventory at all, so a zero-host store is a reduced server, not a dead one.
+// Watching and reloading are no-ops on it.
+func NewEmptyStore() *InventoryStore {
+	return &InventoryStore{}
+}
+
+// HasInventory reports whether a real inventory file backs this store. The MCP
+// layer keys its "unknown host" guidance on it: with no inventory, a name that
+// fails to resolve is explained by the missing file, not by a typo.
+func (s *InventoryStore) HasInventory() bool {
+	return s.path != ""
+}
+
 // NewInventoryStore loads inventory from path and returns a store.
 func NewInventoryStore(path string) (*InventoryStore, error) {
 	servers, err := LoadInventory(path)
@@ -40,8 +56,12 @@ func (s *InventoryStore) Get() []Server {
 	return s.servers
 }
 
-// Reload re-reads inventory from disk.
+// Reload re-reads inventory from disk. A store with no inventory file has
+// nothing to re-read and stays empty.
 func (s *InventoryStore) Reload() error {
+	if !s.HasInventory() {
+		return nil
+	}
 	servers, err := LoadInventory(s.path)
 	if err != nil {
 		return err
@@ -54,8 +74,12 @@ func (s *InventoryStore) Reload() error {
 
 // StartWatcher watches the inventory for changes and reloads automatically.
 // For nix inventories, watches both the host directory and groups/ subdirectory.
-// Debounces rapid events with 150ms window.
+// Debounces rapid events with 150ms window. With no inventory file there is
+// nothing to watch, so this succeeds without starting a watcher.
 func (s *InventoryStore) StartWatcher() error {
+	if !s.HasInventory() {
+		return nil
+	}
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return fmt.Errorf("fsnotify: %w", err)
