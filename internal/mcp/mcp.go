@@ -26,52 +26,14 @@ func createMCPServer(store *inventory.InventoryStore) *server.MCPServer {
 	)
 
 	tool := mcp.NewTool("ssh",
-		mcp.WithDescription(`SSH to remote hosts via a step-based DSL. Brief by design — load the "shellkit-expert" skill for the full reference (actions, tmux verbs, host resolution, address routing, pipelines).
+		mcp.WithDescription(`SSH to remote hosts via a step-based DSL; steps run in order, and later steps read earlier steps' output. Full reference — actions, tmux verbs, host resolution, pipelines: the shellkit-expert skill; "### help" as input prints worked examples.
 
-FORMAT — "input" is one or more blocks:
-  ### step-name
-  {json config}        optional; its keys pick the action
-                       (blank line)
-  script body
-Steps run sequentially; later steps read earlier steps' output.
+Actions, by config key: {"ssh": "host"} runs the body on that host — an inventory name, an ~/.ssh/config alias, or raw user@host[:port]; a ["h1","h2"] array runs the same body on each host in turn; {"list": true} lists inventory hosts; {"tmux": "host:session"} drives a remote tmux session; a body with no config runs locally. Other config keys: timeout (seconds, default 360), entrypoint (default bash), trace, continue_on_error, jump (a ProxyJump bastion), identity (an SSH key path). Auth is a key (ssh-agent, ssh_config, identity) or an inventory host's stored password; both work with jump and fan-out.
 
-ACTIONS (chosen by config key):
-  {"ssh": "host"}            run body on a remote host — name resolves via
-                             inventory, ~/.ssh/config alias, or raw user@host[:port]
-  {"ssh": ["h1","h2"]}      fan out the same body across hosts in parallel
-  {"list": true}             list inventory hosts ("filter": "k=v" to narrow)
-  {"tmux": "host:session"}   drive an interactive remote tmux session via verbs
-  body only, no config       run locally (post-process output, scp/rsync)
-  ### help                   print advanced pipeline + tmux verb examples
-
-CONFIG FIELDS:
-  timeout            seconds before kill (default 360)
-  entrypoint         interpreter (default bash): bash sh zsh python3 python
-                     node deno bun ruby perl
-  trace              bash only, on by default — command trace shown on timeout
-  continue_on_error  proceed to the next step even if this one fails
-  jump               SSH ProxyJump host — hop through a bastion to reach the target
-  identity           SSH identity file (key) path — e.g. ~/.ssh/my_key
-
-AUTH: key (ssh-agent / ssh_config / "identity" field) or password (automatic
-  for inventory hosts with stored credentials). Both work with jump and fan-out.
-TARGET: "ssh" accepts an inventory name, raw user@IP[:port], user@hostname[:port],
-  or an ~/.ssh/config alias — use whichever you have.
-
-OUTPUT & CHAINING (GitHub-Actions style):
-  echo "key=value" >> $OUTPUT          export a value from a step
-  {{step.outputs.key}}                 read it in a later step
-  {{step.output}}                      path to a step's full stdout file
-  {{host.wan_ip}}                      inventory address — fields: wan_ip,
-                                       lan_ip, wireguard_ip, tailscale_ip,
-                                       easytier_ip, user, port (there is no "ip")
-  Substitution is LITERAL (not shell-escaped) — quote values yourself.
-
-Send "### help" for multi-step pipelines, cross-host coordination, non-bash
-entrypoints, and the full tmux verb reference.`),
+Chaining: echo "key=value" >> $OUTPUT exports a value from a step; {{step.outputs.key}} reads it in a later step; {{host.wan_ip}} reads inventory fields. Substitution is literal, not shell-escaped — quote values yourself.`),
 		mcp.WithString("input",
 			mcp.Required(),
-			mcp.Description("One or more DSL blocks. Format: ### name, optional {json config}, blank line, script body. Steps execute in order with template references resolved from prior results."),
+			mcp.Description(`One or more blocks: a "### step-name" line, an optional {json config} line whose keys pick the action, a blank line, the script body.`),
 		),
 	)
 
