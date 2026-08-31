@@ -1,6 +1,6 @@
 ---
 name: shellkit-expert
-description: "Author and debug shellkit MCP `ssh` calls — the one-tool DSL that runs commands on remote hosts. Use for running scripts on a server, fan-out across hosts, file transfer (scp/rsync), SSH key/identity selection, ProxyJump through a bastion, password auth for inventory hosts, targeting hosts by name or IP, capturing and chaining step output, choosing which address (--addr) a host resolves on, timeout or 'unknown host' errors, or an interactive remote tmux session. The tool's own description is heavy and truncated in the tool list — load this for the full reference."
+description: "Author and debug shellkit MCP `ssh` calls — the one-tool DSL that runs commands on remote hosts. Use for running scripts on a server, fan-out across hosts, file transfer (scp/rsync), SSH key/identity selection, ProxyJump through a bastion, password auth for inventory hosts, targeting hosts by name or IP, capturing and chaining step output, choosing which address (--addr) a host resolves on, timeout or 'unknown host' errors, or an interactive remote tmux session. The tool's face is deliberately brief — load this for the full reference."
 ---
 
 # shellkit-expert
